@@ -232,6 +232,24 @@ body {
   color: var(--color-muted);
 }
 
+.streak-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-accent-dark);
+  background: var(--color-accent-light);
+  border-radius: 999px;
+  padding: 4px 9px;
+  white-space: nowrap;
+}
+
+.streak-badge--grace {
+  opacity: 0.5;
+}
+
 .delete-btn {
   flex: 0 0 auto;
   width: 30px;

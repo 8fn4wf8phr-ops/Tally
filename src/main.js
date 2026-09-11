@@ -1,5 +1,6 @@
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Preferences } from '@capacitor/preferences';
+import { markReminderTaken, checkStaleStreaks, isOnGrace, todayKey } from './streak.js';
 import './style.css';
 
 const STORAGE_KEY = 'tally-reminders';
@@ -18,11 +19,6 @@ const permissionBanner = document.getElementById('permissionBanner');
 const enableNotifsBtn = document.getElementById('enableNotifsBtn');
 
 // ---- Date helpers ----
-function todayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 function formatTime(time) {
   const [h, m] = time.split(':').map(Number);
   const period = h >= 12 ? 'PM' : 'AM';
@@ -39,7 +35,14 @@ function escapeHtml(str) {
 // ---- Storage ----
 async function loadReminders() {
   const { value } = await Preferences.get({ key: STORAGE_KEY });
-  reminders = value ? JSON.parse(value) : [];
+  const parsed = value ? JSON.parse(value) : [];
+  // Reminders saved before the streak feature existed won't have these fields.
+  reminders = parsed.map(r => ({
+    currentStreak: 0,
+    longestStreak: 0,
+    lastCompletedDate: null,
+    ...r,
+  }));
   const { value: idValue } = await Preferences.get({ key: NEXT_ID_KEY });
   nextId = idValue ? parseInt(idValue, 10) : 1;
 }
@@ -109,7 +112,15 @@ enableNotifsBtn.addEventListener('click', async () => {
 
 // ---- CRUD ----
 async function addReminder(name, time) {
-  const reminder = { id: nextId++, name, time, takenDate: null };
+  const reminder = {
+    id: nextId++,
+    name,
+    time,
+    takenDate: null,
+    currentStreak: 0,
+    longestStreak: 0,
+    lastCompletedDate: null,
+  };
   reminders.push(reminder);
   await saveReminders();
   await saveNextId();
@@ -118,10 +129,16 @@ async function addReminder(name, time) {
 }
 
 async function toggleTaken(id) {
-  const reminder = reminders.find(r => r.id === id);
-  if (!reminder) return;
+  const idx = reminders.findIndex(r => r.id === id);
+  if (idx === -1) return;
+  const reminder = reminders[idx];
   const today = todayKey();
-  reminder.takenDate = reminder.takenDate === today ? null : today;
+  if (reminder.takenDate === today) {
+    reminder.takenDate = null;
+  } else {
+    reminder.takenDate = today;
+    reminders[idx] = markReminderTaken(reminder, today);
+  }
   await saveReminders();
   render();
 }
@@ -184,6 +201,10 @@ function render() {
         updateReminder(reminder.id, name, time);
       });
     } else {
+      const onGrace = isOnGrace(reminder, today);
+      const streakBadge = reminder.currentStreak > 0
+        ? `<span class="streak-badge${onGrace ? ' streak-badge--grace' : ''}" title="Longest streak: ${reminder.longestStreak} day${reminder.longestStreak === 1 ? '' : 's'}">🔥 ${reminder.currentStreak}</span>`
+        : '';
       item.className = 'reminder-item' + (taken ? ' taken' : '');
       item.innerHTML = `
         <button class="check-btn" aria-label="${taken ? 'Mark not taken' : 'Mark taken'}">${taken ? '✓' : ''}</button>
@@ -191,6 +212,7 @@ function render() {
           <span class="reminder-name">${escapeHtml(reminder.name)}</span>
           <span class="reminder-time">${formatTime(reminder.time)}</span>
         </div>
+        ${streakBadge}
         <button class="delete-btn" aria-label="Delete">✕</button>
       `;
       item.querySelector('.check-btn').addEventListener('click', () => toggleTaken(reminder.id));
@@ -220,6 +242,8 @@ addForm.addEventListener('submit', async (e) => {
 // ---- Init ----
 async function init() {
   await loadReminders();
+  reminders = checkStaleStreaks(reminders);
+  await saveReminders();
   render();
   await checkPermissions();
 }
