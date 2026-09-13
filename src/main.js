@@ -65,6 +65,7 @@ async function scheduleNotification(reminder) {
         title: 'Tally',
         body: `Time for: ${reminder.name}`,
         schedule: { on: { hour, minute }, allowWhileIdle: true },
+        sound: 'default',
       }],
     });
   } catch (e) {
