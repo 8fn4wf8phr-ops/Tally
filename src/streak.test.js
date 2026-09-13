@@ -46,6 +46,15 @@ test('same-day tap does not double-count', () => {
   assert.strictEqual(result, reminder);
 });
 
+test('a "today" earlier than lastCompletedDate is ignored (clock moved backward)', () => {
+  const today = dateKey(base, 0);
+  const tomorrow = dateKey(base, 1);
+  const reminder = makeReminder({ currentStreak: 3, longestStreak: 3, lastCompletedDate: tomorrow });
+  const result = markReminderTaken(reminder, today);
+  assert.strictEqual(result, reminder);
+  assert.equal(result.lastCompletedDate, tomorrow);
+});
+
 test('a 1-day gap is covered by the grace period', () => {
   const twoDaysAgo = dateKey(base, -2);
   const today = dateKey(base, 0);

@@ -56,7 +56,10 @@ export function getPreviousScheduledDate(reminder, fromKey) {
 }
 
 export function markReminderTaken(reminder, today = todayKey()) {
-  if (reminder.lastCompletedDate === today) {
+  // Same-day taps shouldn't double-count, and a "today" that's somehow
+  // earlier than the last recorded completion (clock changed backward,
+  // crossing the date line) shouldn't overwrite more recent progress.
+  if (reminder.lastCompletedDate !== null && today <= reminder.lastCompletedDate) {
     return reminder;
   }
 
