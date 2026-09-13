@@ -126,6 +126,66 @@ body {
   border-color: var(--color-accent);
 }
 
+.recurrence-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* .add-form lays out in a row, so force the recurrence block onto its own
+   line; inside the (column-direction) edit item this isn't needed. */
+.add-form .recurrence-fields {
+  flex: 1 1 100%;
+}
+
+.recurrence-select,
+.day-of-month-input,
+.once-date-input {
+  flex: 1 1 100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-text);
+  font-size: 0.95rem;
+}
+
+.recurrence-select:focus,
+.day-of-month-input:focus,
+.once-date-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.weekdays-picker {
+  flex: 1 1 100%;
+  display: flex;
+  gap: 6px;
+}
+
+.weekdays-picker[hidden] {
+  display: none;
+}
+
+.weekday-btn {
+  flex: 1;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.weekday-btn.selected {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
 .btn-add {
   flex: 0 0 auto;
   background: var(--color-accent);
