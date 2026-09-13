@@ -155,39 +155,63 @@ test('daysOfWeek streak resets after missing two occurrences', () => {
   assert.equal(result.longestStreak, 6);
 });
 
-test('monthlyDate streak continues from the previous month', () => {
-  const lastMonth = todayKey(new Date(2023, 11, 1)); // 2023-12-01
-  const thisMonth = todayKey(new Date(2024, 0, 1)); // 2024-01-01
-  const reminder = makeReminder({
-    currentStreak: 2,
-    longestStreak: 2,
-    lastCompletedDate: lastMonth,
-    recurrence: { type: 'monthlyDate', dayOfMonth: 1 },
-  });
-  const result = markReminderTaken(reminder, thisMonth);
-  assert.equal(result.currentStreak, 3);
+test('monthlyDate reminders never get currentStreak/longestStreak touched', () => {
+  const reminder = makeReminder({ recurrence: { type: 'monthlyDate', dayOfMonth: 1 } });
+  const r1 = markReminderTaken(reminder, '2024-01-01');
+  assert.strictEqual(r1, reminder);
+  assert.equal(r1.currentStreak, 0);
+  assert.equal(r1.longestStreak, 0);
+  assert.equal(r1.lastCompletedDate, null);
+
+  // Calling it repeatedly, including on later dates, still never touches streak fields.
+  const r2 = markReminderTaken(r1, '2024-02-01');
+  const r3 = markReminderTaken(r2, '2024-03-01');
+  assert.equal(r3.currentStreak, 0);
+  assert.equal(r3.longestStreak, 0);
+  assert.equal(r3.lastCompletedDate, null);
 });
 
-test('monthlyDate on the 31st clamps to the previous month\'s last day', () => {
-  const reminder = makeReminder({ recurrence: { type: 'monthlyDate', dayOfMonth: 31 } });
-  // 2024 is a leap year, so February has 29 days.
-  assert.equal(getPreviousScheduledDate(reminder, '2024-03-31'), '2024-02-29');
-});
-
-test('once reminders always report a streak of 1 with no ongoing schedule', () => {
+test('once reminders never get currentStreak/longestStreak touched', () => {
   const reminder = makeReminder({ recurrence: { type: 'once', date: '2024-01-15' } });
   const result = markReminderTaken(reminder, '2024-01-15');
-  assert.equal(result.currentStreak, 1);
-  assert.equal(getPreviousScheduledDate(reminder, '2024-01-15'), null);
+  assert.strictEqual(result, reminder);
+  assert.equal(result.currentStreak, 0);
+  assert.equal(result.longestStreak, 0);
+  assert.equal(result.lastCompletedDate, null);
 });
 
-test('checkStaleStreaks never resets a completed once reminder', () => {
-  const reminder = makeReminder({
+test('checkStaleStreaks skips monthlyDate and once reminders entirely', () => {
+  const reminders = [
+    makeReminder({
+      currentStreak: 6,
+      longestStreak: 6,
+      lastCompletedDate: '2020-01-01',
+      recurrence: { type: 'monthlyDate', dayOfMonth: 1 },
+    }),
+    makeReminder({
+      currentStreak: 1,
+      longestStreak: 1,
+      lastCompletedDate: '2020-01-01',
+      recurrence: { type: 'once', date: '2020-01-01' },
+    }),
+  ];
+  const result = checkStaleStreaks(reminders, dateKey(base, 0));
+  // Untouched, even though a naive daily/daysOfWeek check would call these stale.
+  assert.equal(result[0].currentStreak, 6);
+  assert.equal(result[1].currentStreak, 1);
+});
+
+test('isOnGrace is always false for monthlyDate and once reminders', () => {
+  const monthly = makeReminder({
+    currentStreak: 3,
+    lastCompletedDate: '2020-01-01',
+    recurrence: { type: 'monthlyDate', dayOfMonth: 1 },
+  });
+  const once = makeReminder({
     currentStreak: 1,
-    longestStreak: 1,
     lastCompletedDate: '2020-01-01',
     recurrence: { type: 'once', date: '2020-01-01' },
   });
-  const result = checkStaleStreaks([reminder], dateKey(base, 0));
-  assert.equal(result[0].currentStreak, 1);
+  assert.equal(isOnGrace(monthly, dateKey(base, 0)), false);
+  assert.equal(isOnGrace(once, dateKey(base, 0)), false);
 });

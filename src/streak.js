@@ -1,5 +1,15 @@
 // Pure streak-tracking logic, kept free of DOM/Capacitor so it can be
 // imported directly in tests.
+//
+// Streaks only apply to 'daily' and 'daysOfWeek' reminders. 'monthlyDate'
+// and 'once' reminders never touch currentStreak/longestStreak/lastCompletedDate.
+
+const STREAK_ELIGIBLE_TYPES = new Set(['daily', 'daysOfWeek']);
+
+export function isStreakEligible(reminder) {
+  const type = (reminder.recurrence || { type: 'daily' }).type;
+  return STREAK_ELIGIBLE_TYPES.has(type);
+}
 
 export function todayKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -16,69 +26,50 @@ function subtractDays(dateKey, n) {
   return todayKey(d);
 }
 
-// The scheduled occurrence immediately before `fromKey`, per the reminder's
-// recurrence rule. Returns null when there is no such occurrence (a 'once'
-// reminder, or a malformed recurrence).
+// The expected previous scheduled occurrence before `fromKey`, for 'daily'
+// and 'daysOfWeek' reminders only (the only types that use this).
 export function getPreviousScheduledDate(reminder, fromKey) {
   const recurrence = reminder.recurrence || { type: 'daily' };
 
-  switch (recurrence.type) {
-    case 'daysOfWeek': {
-      const days = recurrence.daysOfWeek;
-      if (!days || days.length === 0) return null;
-      let d = subtractDays(fromKey, 1);
-      // Bounded walk so a malformed/empty schedule can't loop forever.
-      for (let i = 0; i < 14; i++) {
-        if (days.includes(parseDateKey(d).getDay())) return d;
-        d = subtractDays(d, 1);
-      }
-      return null;
+  if (recurrence.type === 'daysOfWeek') {
+    const days = recurrence.daysOfWeek;
+    if (!days || days.length === 0) return null;
+    let d = subtractDays(fromKey, 1);
+    // Bounded walk so a malformed/empty schedule can't loop forever.
+    for (let i = 0; i < 14; i++) {
+      if (days.includes(parseDateKey(d).getDay())) return d;
+      d = subtractDays(d, 1);
     }
-
-    case 'monthlyDate': {
-      const from = parseDateKey(fromKey);
-      // Day 1 never overflows a month, so compute the previous month safely first,
-      // then clamp the target day to however many days that month actually has
-      // (e.g. dayOfMonth 31 in February shouldn't roll over into March).
-      const prevMonthFirst = new Date(from.getFullYear(), from.getMonth() - 1, 1);
-      const daysInPrevMonth = new Date(prevMonthFirst.getFullYear(), prevMonthFirst.getMonth() + 1, 0).getDate();
-      const day = Math.min(recurrence.dayOfMonth, daysInPrevMonth);
-      return todayKey(new Date(prevMonthFirst.getFullYear(), prevMonthFirst.getMonth(), day));
-    }
-
-    case 'once':
-      return null;
-
-    case 'daily':
-    default:
-      return subtractDays(fromKey, 1);
+    return null;
   }
+
+  // 'daily' (default/fallback spacing).
+  return subtractDays(fromKey, 1);
 }
 
 export function markReminderTaken(reminder, today = todayKey()) {
-  // Same-day taps shouldn't double-count, and a "today" that's somehow
-  // earlier than the last recorded completion (clock changed backward,
-  // crossing the date line) shouldn't overwrite more recent progress.
+  // monthlyDate and once reminders don't track streaks at all — completion
+  // itself is already recorded elsewhere (takenDate), so just no-op here.
+  if (!isStreakEligible(reminder)) {
+    return reminder;
+  }
+
+  // Backdated/out-of-order completion (lastCompletedDate is after today), or
+  // an already-recorded same-day tap — leave the streak untouched either way.
   if (reminder.lastCompletedDate !== null && today <= reminder.lastCompletedDate) {
     return reminder;
   }
 
+  const prev1 = getPreviousScheduledDate(reminder, today);
+  const prev2 = prev1 !== null ? getPreviousScheduledDate(reminder, prev1) : null;
+  // Grace period: landing on either of the two most recent expected
+  // occurrences means at most one occurrence was missed.
+  const withinGrace = reminder.lastCompletedDate === prev1 || reminder.lastCompletedDate === prev2;
+
   const updated = { ...reminder };
-  const recurrence = reminder.recurrence || { type: 'daily' };
-
-  if (recurrence.type === 'once') {
-    // No recurring schedule, so there's nothing to be consecutive with.
-    updated.currentStreak = 1;
-  } else {
-    const prev1 = getPreviousScheduledDate(reminder, today);
-    const prev2 = prev1 !== null ? getPreviousScheduledDate(reminder, prev1) : null;
-    // Grace period: completing on or after the second-most-recent scheduled
-    // occurrence means at most one occurrence was missed.
-    const withinGrace = reminder.lastCompletedDate !== null && prev2 !== null && reminder.lastCompletedDate >= prev2;
-    updated.currentStreak = withinGrace ? reminder.currentStreak + 1 : 1;
-  }
-
+  updated.currentStreak = withinGrace ? reminder.currentStreak + 1 : 1;
   updated.lastCompletedDate = today;
+
   if (updated.currentStreak > updated.longestStreak) {
     updated.longestStreak = updated.currentStreak;
   }
@@ -87,8 +78,8 @@ export function markReminderTaken(reminder, today = todayKey()) {
 }
 
 export function isOnGrace(reminder, today = todayKey()) {
-  const recurrence = reminder.recurrence || { type: 'daily' };
-  if (!reminder.currentStreak || !reminder.lastCompletedDate || reminder.lastCompletedDate === today || recurrence.type === 'once') {
+  if (!isStreakEligible(reminder)) return false;
+  if (!reminder.currentStreak || !reminder.lastCompletedDate || reminder.lastCompletedDate === today) {
     return false;
   }
   const prev1 = getPreviousScheduledDate(reminder, today);
@@ -101,15 +92,15 @@ export function isOnGrace(reminder, today = todayKey()) {
 
 export function checkStaleStreaks(reminders, today = todayKey()) {
   return reminders.map(reminder => {
-    const recurrence = reminder.recurrence || { type: 'daily' };
-    if (!reminder.lastCompletedDate || recurrence.type === 'once') return reminder;
+    if (!isStreakEligible(reminder)) return reminder;
+    if (!reminder.lastCompletedDate || reminder.lastCompletedDate === today) return reminder;
 
     const prev1 = getPreviousScheduledDate(reminder, today);
     if (prev1 === null) return reminder;
     const prev2 = getPreviousScheduledDate(reminder, prev1);
-    if (prev2 === null) return reminder;
 
-    if (reminder.lastCompletedDate < prev2) {
+    const withinGrace = reminder.lastCompletedDate === prev1 || reminder.lastCompletedDate === prev2;
+    if (!withinGrace) {
       return { ...reminder, currentStreak: 0 };
     }
     return reminder;

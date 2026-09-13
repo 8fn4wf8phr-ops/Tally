@@ -1,6 +1,6 @@
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Preferences } from '@capacitor/preferences';
-import { markReminderTaken, checkStaleStreaks, isOnGrace, todayKey } from './streak.js';
+import { markReminderTaken, checkStaleStreaks, isOnGrace, isStreakEligible, todayKey } from './streak.js';
 import './style.css';
 
 const STORAGE_KEY = 'tally-reminders';
@@ -340,7 +340,7 @@ function render() {
       });
     } else {
       const onGrace = isOnGrace(reminder, today);
-      const streakBadge = reminder.currentStreak > 0
+      const streakBadge = isStreakEligible(reminder) && reminder.currentStreak > 0
         ? `<span class="streak-badge${onGrace ? ' streak-badge--grace' : ''}" title="Longest streak: ${reminder.longestStreak} day${reminder.longestStreak === 1 ? '' : 's'}">🔥 ${reminder.currentStreak}</span>`
         : '';
       const recurrenceLabel = describeRecurrence(reminder.recurrence);
