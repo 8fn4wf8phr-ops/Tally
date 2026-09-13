@@ -72,6 +72,10 @@ body {
   gap: 12px;
 }
 
+.permission-banner[hidden] {
+  display: none;
+}
+
 .permission-banner p {
   font-size: 0.9rem;
   color: var(--color-text);
