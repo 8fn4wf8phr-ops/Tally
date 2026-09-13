@@ -427,7 +427,14 @@ function applyParsedVoiceInput(parsed) {
   nameInput.value = parsed.name;
   timeInput.value = parsed.time ? `${pad2(parsed.time.hour)}:${pad2(parsed.time.minute)}` : '';
   voiceTimeHint.hidden = !parsed.time?.vague;
-  recurrenceFieldsEl.innerHTML = renderRecurrenceFields(parsed.recurrence);
+  const recurrence = parsed.recurrence;
+  // The parser deliberately never guesses a date for 'once' (see voice.js) —
+  // default it to today so the review form isn't stuck with an empty
+  // required field the user has to notice and fill in before Add works.
+  if (recurrence.type === 'once' && !recurrence.date) {
+    recurrence.date = todayKey();
+  }
+  recurrenceFieldsEl.innerHTML = renderRecurrenceFields(recurrence);
   wireRecurrenceControls(addForm);
   nameInput.focus();
 }
