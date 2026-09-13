@@ -99,6 +99,14 @@ public class SpeechInputPlugin: CAPPlugin, CAPBridgedPlugin, SFSpeechRecognizerD
         }
 
         let recordingFormat = inputNode.outputFormat(forBus: 0)
+        // installTap crashes (uncaught ObjC exception, not a throwing call) if the
+        // input hardware hasn't handed back a valid format yet — seen intermittently
+        // right after activating the audio session, especially in the Simulator.
+        guard recordingFormat.sampleRate > 0, recordingFormat.channelCount > 0 else {
+            stopRecognitionInternal()
+            call.reject("Microphone is not ready yet — try again")
+            return
+        }
         inputNode.removeTap(onBus: 0)
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
             request.append(buffer)
