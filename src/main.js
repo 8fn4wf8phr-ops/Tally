@@ -1,6 +1,8 @@
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Preferences } from '@capacitor/preferences';
 import { markReminderTaken, checkStaleStreaks, isOnGrace, isStreakEligible, todayKey } from './streak.js';
+import { parseVoiceInput } from './voice.js';
+import { isVoiceAvailable, ensureVoicePermissions, startListening } from './voiceInput.js';
 import './style.css';
 
 const STORAGE_KEY = 'tally-reminders';
@@ -18,6 +20,13 @@ const timeInput = document.getElementById('timeInput');
 const recurrenceFieldsEl = document.getElementById('recurrenceFields');
 const permissionBanner = document.getElementById('permissionBanner');
 const enableNotifsBtn = document.getElementById('enableNotifsBtn');
+const micBtn = document.getElementById('micBtn');
+const voiceTimeHint = document.getElementById('voiceTimeHint');
+const voiceOverlay = document.getElementById('voiceOverlay');
+const voiceStatus = document.getElementById('voiceStatus');
+const voiceTranscript = document.getElementById('voiceTranscript');
+const voiceCancelBtn = document.getElementById('voiceCancelBtn');
+const voiceDoneBtn = document.getElementById('voiceDoneBtn');
 
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -379,9 +388,104 @@ addForm.addEventListener('submit', async (e) => {
   await addReminder(name, time, recurrence);
   nameInput.value = '';
   timeInput.value = '';
+  voiceTimeHint.hidden = true;
   recurrenceFieldsEl.innerHTML = renderRecurrenceFields();
   wireRecurrenceControls(addForm);
   nameInput.focus();
+});
+
+timeInput.addEventListener('input', () => {
+  voiceTimeHint.hidden = true;
+});
+
+// ---- Voice input ----
+// Speech recognition runs entirely on-device (SFSpeechRecognizer with
+// requiresOnDeviceRecognition = true, see SpeechInputPlugin.swift) — audio
+// never leaves the device. The transcript is only ever a starting point:
+// it's parsed into a best guess and dropped into the normal add form for
+// the user to review and edit, never saved directly.
+let voiceSession = null;
+let latestTranscript = '';
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+function openVoiceOverlay() {
+  voiceStatus.textContent = 'Listening…';
+  voiceTranscript.textContent = '';
+  voiceOverlay.hidden = false;
+  micBtn.classList.add('listening');
+}
+
+function closeVoiceOverlay() {
+  voiceOverlay.hidden = true;
+  micBtn.classList.remove('listening');
+}
+
+function applyParsedVoiceInput(parsed) {
+  nameInput.value = parsed.name;
+  timeInput.value = parsed.time ? `${pad2(parsed.time.hour)}:${pad2(parsed.time.minute)}` : '';
+  voiceTimeHint.hidden = !parsed.time?.vague;
+  recurrenceFieldsEl.innerHTML = renderRecurrenceFields(parsed.recurrence);
+  wireRecurrenceControls(addForm);
+  nameInput.focus();
+}
+
+async function stopVoiceSession() {
+  if (!voiceSession) return;
+  const session = voiceSession;
+  voiceSession = null;
+  try {
+    await session.stop();
+  } catch (e) {
+    console.error('Could not stop voice session', e);
+  }
+}
+
+async function finishVoiceInput() {
+  await stopVoiceSession();
+  closeVoiceOverlay();
+  const transcript = latestTranscript.trim();
+  latestTranscript = '';
+  if (transcript) {
+    applyParsedVoiceInput(parseVoiceInput(transcript));
+  }
+}
+
+micBtn.addEventListener('click', async () => {
+  if (voiceSession) return;
+  try {
+    const permissions = await ensureVoicePermissions();
+    if (permissions.speech !== 'granted' || permissions.microphone !== 'granted') {
+      voiceStatus.textContent = 'Microphone/speech access denied';
+      voiceOverlay.hidden = false;
+      return;
+    }
+    openVoiceOverlay();
+    voiceSession = await startListening({
+      onTranscript: ({ text, isFinal }) => {
+        latestTranscript = text;
+        voiceTranscript.textContent = text;
+        if (isFinal) finishVoiceInput();
+      },
+      onError: (err) => {
+        voiceStatus.textContent = err?.message ? `Error: ${err.message}` : 'Could not transcribe';
+      },
+    });
+  } catch (e) {
+    console.error('Could not start voice input', e);
+    voiceStatus.textContent = 'Voice input is not available';
+    voiceOverlay.hidden = false;
+  }
+});
+
+voiceDoneBtn.addEventListener('click', finishVoiceInput);
+
+voiceCancelBtn.addEventListener('click', async () => {
+  latestTranscript = '';
+  await stopVoiceSession();
+  closeVoiceOverlay();
 });
 
 // ---- Init ----
@@ -391,6 +495,7 @@ async function init() {
   await saveReminders();
   render();
   await checkPermissions();
+  micBtn.hidden = !(await isVoiceAvailable());
 }
 
 init();

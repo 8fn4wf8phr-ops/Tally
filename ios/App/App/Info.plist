@@ -24,6 +24,10 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Tally uses the microphone to let you add reminders by speaking. Audio is processed entirely on your device and is never sent anywhere.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Tally transcribes your voice on-device to fill in a reminder. Nothing is sent off your device.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
