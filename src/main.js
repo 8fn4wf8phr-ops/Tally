@@ -482,7 +482,7 @@ micBtn.addEventListener('click', async () => {
     });
   } catch (e) {
     console.error('Could not start voice input', e);
-    voiceStatus.textContent = 'Voice input is not available';
+    voiceStatus.textContent = e?.message || 'Voice input is not available';
     voiceOverlay.hidden = false;
   }
 });
