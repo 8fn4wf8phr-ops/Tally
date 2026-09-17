@@ -9,7 +9,13 @@
 
   <div id="app" class="app">
     <header class="app-header">
-      <h1>Tally</h1>
+      <div class="app-header-row">
+        <h1>Tally</h1>
+        <button type="button" id="settingsBtn" class="btn-icon" aria-label="Settings">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      </div>
+      <p id="greeting" class="greeting"></p>
     </header>
 
     <div id="permissionBanner" class="permission-banner" hidden>
@@ -45,11 +51,38 @@
     </div>
 
     <div id="emptyState" class="empty-state">
-      <p>Nothing yet.</p>
+      <p id="emptyStateMessage"></p>
       <p class="empty-sub">Add something above to get started.</p>
     </div>
 
     <div id="reminderList" class="reminder-list"></div>
+  </div>
+
+  <div id="onboardingScreen" class="fullscreen-overlay" hidden>
+    <div class="fullscreen-card">
+      <h2>What should we call you?</h2>
+      <p class="fullscreen-sub">Tally will use it to personalize reminders and greetings. It's stored only on this device.</p>
+      <input type="text" id="onboardingNameInput" placeholder="Your name" maxlength="30" autocomplete="given-name">
+      <button type="button" id="onboardingContinueBtn" class="btn-add" disabled>Continue</button>
+      <button type="button" id="onboardingSkipBtn" class="btn-text">Skip</button>
+    </div>
+  </div>
+
+  <div id="settingsScreen" class="fullscreen-overlay" hidden>
+    <div class="fullscreen-card">
+      <div class="settings-header">
+        <h2>Settings</h2>
+        <button type="button" id="settingsCloseBtn" class="btn-icon" aria-label="Close settings">✕</button>
+      </div>
+      <label class="settings-label" for="settingsNameInput">Your name</label>
+      <input type="text" id="settingsNameInput" placeholder="Not set" maxlength="30" autocomplete="given-name">
+    </div>
+  </div>
+
+  <div id="milestoneModal" class="milestone-modal" hidden>
+    <div class="milestone-modal-card">
+      <p id="milestoneMessage" class="milestone-message"></p>
+    </div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

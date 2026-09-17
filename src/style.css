@@ -42,6 +42,12 @@ body {
   margin-bottom: 20px;
 }
 
+.app-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .app-header h1 {
   font-size: 1.75rem;
   font-weight: 800;
@@ -57,6 +63,32 @@ body {
   margin-bottom: 4px;
   border-radius: 50%;
   background: var(--color-accent);
+}
+
+.greeting {
+  margin-top: 4px;
+  font-size: 0.95rem;
+  color: var(--color-muted);
+}
+
+.btn-icon {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--color-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.btn-icon:active {
+  background: var(--color-accent-light);
+  color: var(--color-accent-dark);
 }
 
 /* ---- Permission banner ---- */
@@ -520,4 +552,116 @@ body {
   font-size: 0.95rem;
   font-weight: 700;
   cursor: pointer;
+}
+
+/* ---- Onboarding / Settings (fullscreen overlay) ---- */
+.fullscreen-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--color-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(20px + var(--safe-top)) 20px calc(20px + var(--safe-bottom));
+  z-index: 200;
+}
+
+.fullscreen-overlay[hidden] {
+  display: none;
+}
+
+.fullscreen-card {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fullscreen-card h2 {
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.fullscreen-sub {
+  font-size: 0.9rem;
+  color: var(--color-muted);
+  margin-bottom: 8px;
+}
+
+.fullscreen-card input[type="text"] {
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-text);
+  font-size: 1rem;
+}
+
+.fullscreen-card input[type="text"]:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.fullscreen-card .btn-add:disabled {
+  opacity: 0.5;
+  box-shadow: none;
+  cursor: default;
+}
+
+.btn-text {
+  background: none;
+  border: none;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 8px;
+  cursor: pointer;
+  align-self: center;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-muted);
+  margin-top: 8px;
+}
+
+/* ---- Streak milestone modal ---- */
+.milestone-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(28, 36, 32, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 300;
+}
+
+.milestone-modal[hidden] {
+  display: none;
+}
+
+.milestone-modal-card {
+  width: 100%;
+  max-width: 340px;
+  background: var(--color-accent);
+  border-radius: 20px;
+  padding: 28px 24px;
+  box-shadow: 0 20px 40px -12px rgba(28, 36, 32, 0.35);
+}
+
+.milestone-message {
+  text-align: center;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #fff;
 }

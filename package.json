@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/streak.test.js src/voice.test.js"
+    "test": "node --test src/streak.test.js src/voice.test.js src/personalization.test.js"
   },
   "dependencies": {
     "@capacitor/core": "latest",

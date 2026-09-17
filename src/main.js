@@ -3,14 +3,18 @@ import { Preferences } from '@capacitor/preferences';
 import { markReminderTaken, checkStaleStreaks, isOnGrace, isStreakEligible, todayKey } from './streak.js';
 import { parseVoiceInput } from './voice.js';
 import { isVoiceAvailable, ensureVoicePermissions, startListening } from './voiceInput.js';
+import { getGreeting, getEmptyStateMessage, isStreakMilestone, getMilestoneMessage, getNotificationBody } from './personalization.js';
 import './style.css';
 
 const STORAGE_KEY = 'tally-reminders';
 const NEXT_ID_KEY = 'tally-next-id';
+const USER_NAME_KEY = 'tally-user-name';
+const ONBOARDED_KEY = 'tally-onboarded';
 
 let reminders = [];
 let nextId = 1;
 let editingId = null;
+let userName = null;
 
 const listEl = document.getElementById('reminderList');
 const emptyStateEl = document.getElementById('emptyState');
@@ -27,6 +31,17 @@ const voiceStatus = document.getElementById('voiceStatus');
 const voiceTranscript = document.getElementById('voiceTranscript');
 const voiceCancelBtn = document.getElementById('voiceCancelBtn');
 const voiceDoneBtn = document.getElementById('voiceDoneBtn');
+const greetingEl = document.getElementById('greeting');
+const settingsBtn = document.getElementById('settingsBtn');
+const settingsScreen = document.getElementById('settingsScreen');
+const settingsCloseBtn = document.getElementById('settingsCloseBtn');
+const settingsNameInput = document.getElementById('settingsNameInput');
+const onboardingScreen = document.getElementById('onboardingScreen');
+const onboardingNameInput = document.getElementById('onboardingNameInput');
+const onboardingContinueBtn = document.getElementById('onboardingContinueBtn');
+const onboardingSkipBtn = document.getElementById('onboardingSkipBtn');
+const milestoneModal = document.getElementById('milestoneModal');
+const milestoneMessageEl = document.getElementById('milestoneMessage');
 
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -149,6 +164,75 @@ async function saveNextId() {
   await Preferences.set({ key: NEXT_ID_KEY, value: String(nextId) });
 }
 
+// ---- Personalization ----
+async function loadUserName() {
+  const { value } = await Preferences.get({ key: USER_NAME_KEY });
+  userName = value || null;
+}
+
+async function saveUserName(name) {
+  userName = name || null;
+  if (userName) {
+    await Preferences.set({ key: USER_NAME_KEY, value: userName });
+  } else {
+    await Preferences.remove({ key: USER_NAME_KEY });
+  }
+}
+
+function renderGreeting() {
+  greetingEl.textContent = getGreeting(userName);
+}
+
+let milestoneTimer = null;
+
+function showMilestoneModal(streak) {
+  const message = getMilestoneMessage(streak, userName);
+  if (!message) return;
+  clearTimeout(milestoneTimer);
+  milestoneMessageEl.textContent = message;
+  milestoneModal.hidden = false;
+  milestoneTimer = setTimeout(() => {
+    milestoneModal.hidden = true;
+  }, 3500);
+}
+
+// ---- Onboarding ----
+onboardingNameInput.addEventListener('input', () => {
+  onboardingContinueBtn.disabled = onboardingNameInput.value.trim().length === 0;
+});
+
+async function finishOnboarding(name) {
+  await saveUserName(name);
+  await Preferences.set({ key: ONBOARDED_KEY, value: 'true' });
+  onboardingScreen.hidden = true;
+  renderGreeting();
+  render();
+}
+
+onboardingContinueBtn.addEventListener('click', () => {
+  const name = onboardingNameInput.value.trim();
+  if (!name) return;
+  finishOnboarding(name);
+});
+
+onboardingSkipBtn.addEventListener('click', () => finishOnboarding(null));
+
+// ---- Settings ----
+settingsBtn.addEventListener('click', () => {
+  settingsNameInput.value = userName || '';
+  settingsScreen.hidden = false;
+});
+
+settingsCloseBtn.addEventListener('click', () => {
+  settingsScreen.hidden = true;
+});
+
+settingsNameInput.addEventListener('blur', async () => {
+  await saveUserName(settingsNameInput.value.trim());
+  renderGreeting();
+  render();
+});
+
 // ---- Notifications ----
 // 'daysOfWeek' reminders need one native notification per weekday, since
 // Capacitor's schedule.on only takes a single weekday value. Sub-IDs are
@@ -165,7 +249,7 @@ function notificationIdsFor(reminder) {
 async function scheduleNotification(reminder) {
   const [hour, minute] = reminder.time.split(':').map(Number);
   const recurrence = reminder.recurrence || { type: 'daily' };
-  const body = `Time for: ${reminder.name}`;
+  const body = getNotificationBody(reminder.name, userName);
   let notifications;
 
   if (recurrence.type === 'daysOfWeek') {
@@ -277,8 +361,13 @@ async function toggleTaken(id) {
   if (reminder.takenDate === today) {
     reminder.takenDate = null;
   } else {
+    const previousStreak = reminder.currentStreak;
     reminder.takenDate = today;
     reminders[idx] = markReminderTaken(reminder, today);
+    const newStreak = reminders[idx].currentStreak;
+    if (newStreak !== previousStreak && isStreakMilestone(newStreak)) {
+      showMilestoneModal(newStreak);
+    }
   }
   await saveReminders();
   render();
@@ -311,6 +400,7 @@ function render() {
   const today = todayKey();
 
   if (reminders.length === 0) {
+    emptyStateEl.querySelector('#emptyStateMessage').textContent = getEmptyStateMessage(userName);
     emptyStateEl.hidden = false;
     return;
   }
@@ -497,12 +587,19 @@ voiceCancelBtn.addEventListener('click', async () => {
 
 // ---- Init ----
 async function init() {
+  await loadUserName();
+  renderGreeting();
   await loadReminders();
   reminders = checkStaleStreaks(reminders);
   await saveReminders();
   render();
   await checkPermissions();
   micBtn.hidden = !(await isVoiceAvailable());
+
+  const { value: onboarded } = await Preferences.get({ key: ONBOARDED_KEY });
+  if (!onboarded) {
+    onboardingScreen.hidden = false;
+  }
 }
 
 init();
