@@ -3,7 +3,7 @@ import { Preferences } from '@capacitor/preferences';
 import { markReminderTaken, checkStaleStreaks, isOnGrace, isStreakEligible, todayKey } from './streak.js';
 import { parseVoiceInput } from './voice.js';
 import { isVoiceAvailable, ensureVoicePermissions, startListening } from './voiceInput.js';
-import { getGreeting, getEmptyStateMessage, isStreakMilestone, getMilestoneMessage, getNotificationBody } from './personalization.js';
+import { getGreeting, getEmptyStateMessage, isStreakMilestone, getMilestoneMessage, getStreakResetMessage, getNotificationBody } from './personalization.js';
 import './style.css';
 
 const STORAGE_KEY = 'tally-reminders';
@@ -42,6 +42,8 @@ const onboardingContinueBtn = document.getElementById('onboardingContinueBtn');
 const onboardingSkipBtn = document.getElementById('onboardingSkipBtn');
 const milestoneModal = document.getElementById('milestoneModal');
 const milestoneMessageEl = document.getElementById('milestoneMessage');
+const toastEl = document.getElementById('toast');
+const toastMessageEl = document.getElementById('toastMessage');
 
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -194,6 +196,19 @@ function showMilestoneModal(streak) {
   milestoneTimer = setTimeout(() => {
     milestoneModal.hidden = true;
   }, 3500);
+}
+
+// Low-pressure by design: a toast, not a modal — no backdrop, no dismiss
+// button, gone on its own well before it could feel naggy.
+let toastTimer = null;
+
+function showToast(message) {
+  clearTimeout(toastTimer);
+  toastMessageEl.textContent = message;
+  toastEl.hidden = false;
+  toastTimer = setTimeout(() => {
+    toastEl.hidden = true;
+  }, 3000);
 }
 
 // ---- Onboarding ----
@@ -590,9 +605,16 @@ async function init() {
   await loadUserName();
   renderGreeting();
   await loadReminders();
+  const previousStreaks = new Map(reminders.map(r => [r.id, r.currentStreak]));
   reminders = checkStaleStreaks(reminders);
+  // One toast for the launch, even if several reminders' streaks broke while
+  // the app was closed — this is meant to be a gentle nudge, not a list.
+  const anyStreakReset = reminders.some(r => previousStreaks.get(r.id) > 0 && r.currentStreak === 0);
   await saveReminders();
   render();
+  if (anyStreakReset) {
+    showToast(getStreakResetMessage(userName));
+  }
   await checkPermissions();
   micBtn.hidden = !(await isVoiceAvailable());
 

@@ -64,7 +64,7 @@
       <p class="fullscreen-sub">Tally will use it to personalize reminders and greetings. It's stored only on this device.</p>
       <input type="text" id="onboardingNameInput" placeholder="Your name" maxlength="30" autocomplete="given-name">
       <button type="button" id="onboardingContinueBtn" class="btn-add" disabled>Continue</button>
-      <button type="button" id="onboardingSkipBtn" class="btn-text">Skip</button>
+      <button type="button" id="onboardingSkipBtn" class="btn-text">I'd rather not say</button>
     </div>
   </div>
 
@@ -83,6 +83,10 @@
     <div class="milestone-modal-card">
       <p id="milestoneMessage" class="milestone-message"></p>
     </div>
+  </div>
+
+  <div id="toast" class="toast" hidden>
+    <p id="toastMessage" class="toast-message"></p>
   </div>
 
   <script type="module" src="/src/main.js"></script>

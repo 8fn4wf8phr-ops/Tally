@@ -88,6 +88,25 @@ export function getMilestoneMessage(streak, name) {
   return name ? `${label}, ${name} 🔥` : `${label} 🔥`;
 }
 
+// Low-pressure — deliberately no exclamation points or "you failed" framing.
+const STREAK_RESET_MESSAGES_NAMED = [
+  "Streak reset, {name} — let's start a new one.",
+  'No worries, {name}. Fresh start today.',
+  'Missed one, {name}. Back at it now.',
+];
+
+const STREAK_RESET_MESSAGES_GENERIC = [
+  "Streak reset — let's start a new one.",
+  'No worries. Fresh start today.',
+  'Missed one. Back at it now.',
+];
+
+export function getStreakResetMessage(name, random = Math.random()) {
+  const pool = name ? STREAK_RESET_MESSAGES_NAMED : STREAK_RESET_MESSAGES_GENERIC;
+  const template = pool[Math.floor(random * pool.length)];
+  return name ? template.replace('{name}', name) : template;
+}
+
 // Each named variant has a name-free counterpart at the same index so the
 // tone stays roughly matched when there's no name to personalize with.
 const NOTIFICATION_VARIANTS_NAMED = [

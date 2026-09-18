@@ -6,6 +6,7 @@ import {
   getEmptyStateMessage,
   isStreakMilestone,
   getMilestoneMessage,
+  getStreakResetMessage,
   getNotificationBody,
 } from './personalization.js';
 
@@ -75,6 +76,29 @@ test('getMilestoneMessage falls back to generic phrasing with no name', () => {
 
 test('getMilestoneMessage returns null for a non-milestone streak', () => {
   assert.equal(getMilestoneMessage(8, 'Sam'), null);
+});
+
+test('getStreakResetMessage personalizes when a name is set', () => {
+  const variantCount = 3;
+  for (let i = 0; i < variantCount; i++) {
+    const msg = getStreakResetMessage('Sam', i / variantCount);
+    assert.match(msg, /Sam/);
+  }
+});
+
+test('getStreakResetMessage falls back to generic phrasing with no name', () => {
+  const variantCount = 3;
+  for (let i = 0; i < variantCount; i++) {
+    const msg = getStreakResetMessage(null, i / variantCount);
+    assert.doesNotMatch(msg, /\{name\}/);
+    assert.doesNotMatch(msg, /undefined|null/);
+  }
+});
+
+test('getStreakResetMessage varies with the random value passed in', () => {
+  const first = getStreakResetMessage('Sam', 0);
+  const second = getStreakResetMessage('Sam', 0.99);
+  assert.notEqual(first, second);
 });
 
 test('getNotificationBody fills in name and title across all named variants', () => {
