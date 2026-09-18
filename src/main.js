@@ -4,17 +4,33 @@ import { markReminderTaken, checkStaleStreaks, isOnGrace, isStreakEligible, toda
 import { parseVoiceInput } from './voice.js';
 import { isVoiceAvailable, ensureVoicePermissions, startListening } from './voiceInput.js';
 import { getGreeting, getEmptyStateMessage, isStreakMilestone, getMilestoneMessage, getStreakResetMessage, getNotificationBody } from './personalization.js';
+import {
+  ACCENT_THEMES,
+  DEFAULT_ACCENT_THEME,
+  getAccentTheme,
+  GRACE_PERIOD_OPTIONS,
+  DEFAULT_REMINDER_DEFAULTS,
+  graceOccurrencesForHours,
+  DEFAULT_QUIET_HOURS,
+  isWithinQuietHours,
+} from './settings.js';
 import './style.css';
 
 const STORAGE_KEY = 'tally-reminders';
 const NEXT_ID_KEY = 'tally-next-id';
 const USER_NAME_KEY = 'tally-user-name';
 const ONBOARDED_KEY = 'tally-onboarded';
+const ACCENT_THEME_KEY = 'tally-accent-theme';
+const REMINDER_DEFAULTS_KEY = 'tally-reminder-defaults';
+const QUIET_HOURS_KEY = 'tally-quiet-hours';
 
 let reminders = [];
 let nextId = 1;
 let editingId = null;
 let userName = null;
+let accentTheme = DEFAULT_ACCENT_THEME;
+let reminderDefaults = { ...DEFAULT_REMINDER_DEFAULTS };
+let quietHours = { ...DEFAULT_QUIET_HOURS };
 
 const listEl = document.getElementById('reminderList');
 const emptyStateEl = document.getElementById('emptyState');
@@ -36,6 +52,13 @@ const settingsBtn = document.getElementById('settingsBtn');
 const settingsScreen = document.getElementById('settingsScreen');
 const settingsCloseBtn = document.getElementById('settingsCloseBtn');
 const settingsNameInput = document.getElementById('settingsNameInput');
+const themeSwatchesEl = document.getElementById('themeSwatches');
+const graceOptionsEl = document.getElementById('graceOptions');
+const soundToggleEl = document.getElementById('soundToggle');
+const quietHoursToggleEl = document.getElementById('quietHoursToggle');
+const quietHoursRangeEl = document.getElementById('quietHoursRange');
+const quietHoursStartInput = document.getElementById('quietHoursStart');
+const quietHoursEndInput = document.getElementById('quietHoursEnd');
 const onboardingScreen = document.getElementById('onboardingScreen');
 const onboardingNameInput = document.getElementById('onboardingNameInput');
 const onboardingContinueBtn = document.getElementById('onboardingContinueBtn');
@@ -211,6 +234,111 @@ function showToast(message) {
   }, 3000);
 }
 
+// ---- Appearance (accent theme) ----
+async function loadAccentTheme() {
+  const { value } = await Preferences.get({ key: ACCENT_THEME_KEY });
+  accentTheme = ACCENT_THEMES[value] ? value : DEFAULT_ACCENT_THEME;
+}
+
+// Sets the CSS custom properties every accent-colored rule in style.css
+// reads from. Called on init (before render, to avoid a flash of the
+// default color) and again immediately whenever the theme changes.
+function applyAccentTheme() {
+  const theme = getAccentTheme(accentTheme);
+  const root = document.documentElement.style;
+  root.setProperty('--accent-color', theme.accent);
+  root.setProperty('--accent-color-dark', theme.accentDark);
+  root.setProperty('--accent-color-light', theme.accentLight);
+}
+
+async function saveAccentTheme(id) {
+  accentTheme = ACCENT_THEMES[id] ? id : DEFAULT_ACCENT_THEME;
+  await Preferences.set({ key: ACCENT_THEME_KEY, value: accentTheme });
+  applyAccentTheme();
+}
+
+// ---- Reminder defaults (grace period, notification sound) ----
+async function loadReminderDefaults() {
+  const { value } = await Preferences.get({ key: REMINDER_DEFAULTS_KEY });
+  reminderDefaults = value
+    ? { ...DEFAULT_REMINDER_DEFAULTS, ...JSON.parse(value) }
+    : { ...DEFAULT_REMINDER_DEFAULTS };
+}
+
+async function saveReminderDefaults(next) {
+  reminderDefaults = next;
+  await Preferences.set({ key: REMINDER_DEFAULTS_KEY, value: JSON.stringify(reminderDefaults) });
+}
+
+// ---- Quiet hours ----
+async function loadQuietHours() {
+  const { value } = await Preferences.get({ key: QUIET_HOURS_KEY });
+  quietHours = value ? { ...DEFAULT_QUIET_HOURS, ...JSON.parse(value) } : { ...DEFAULT_QUIET_HOURS };
+}
+
+async function saveQuietHours(next) {
+  quietHours = next;
+  await Preferences.set({ key: QUIET_HOURS_KEY, value: JSON.stringify(quietHours) });
+}
+
+// ---- Settings screen rendering ----
+// Same convention as the recurrence fields: render an innerHTML block from
+// current state, then wire it — re-run on open and after every change so the
+// selected state always reflects what's actually saved.
+function renderOnOffToggle(container, value, onChange) {
+  container.innerHTML = `
+    <button type="button" class="segmented-btn${value ? ' selected' : ''}" data-value="true">On</button>
+    <button type="button" class="segmented-btn${!value ? ' selected' : ''}" data-value="false">Off</button>
+  `;
+  container.querySelectorAll('.segmented-btn').forEach(btn => {
+    btn.addEventListener('click', () => onChange(btn.dataset.value === 'true'));
+  });
+}
+
+function renderSettingsScreen() {
+  themeSwatchesEl.innerHTML = Object.entries(ACCENT_THEMES).map(([id, theme]) => `
+    <button type="button" class="theme-swatch${id === accentTheme ? ' selected' : ''}" data-theme="${id}" style="background:${theme.accent}" aria-label="${theme.label} theme"></button>
+  `).join('');
+  themeSwatchesEl.querySelectorAll('.theme-swatch').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await saveAccentTheme(btn.dataset.theme);
+      renderSettingsScreen();
+    });
+  });
+
+  graceOptionsEl.innerHTML = GRACE_PERIOD_OPTIONS.map(hours => `
+    <button type="button" class="segmented-btn${hours === reminderDefaults.gracePeriodHours ? ' selected' : ''}" data-hours="${hours}">${hours === 0 ? 'None' : hours + 'h'}</button>
+  `).join('');
+  graceOptionsEl.querySelectorAll('.segmented-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await saveReminderDefaults({ ...reminderDefaults, gracePeriodHours: Number(btn.dataset.hours) });
+      renderSettingsScreen();
+      render(); // grace period affects the isOnGrace badge shown on each reminder
+    });
+  });
+
+  renderOnOffToggle(soundToggleEl, reminderDefaults.soundEnabled, async (enabled) => {
+    await saveReminderDefaults({ ...reminderDefaults, soundEnabled: enabled });
+    renderSettingsScreen();
+  });
+
+  renderOnOffToggle(quietHoursToggleEl, quietHours.enabled, async (enabled) => {
+    await saveQuietHours({ ...quietHours, enabled });
+    renderSettingsScreen();
+  });
+  quietHoursRangeEl.hidden = !quietHours.enabled;
+  quietHoursStartInput.value = quietHours.start;
+  quietHoursEndInput.value = quietHours.end;
+}
+
+quietHoursStartInput.addEventListener('change', async () => {
+  await saveQuietHours({ ...quietHours, start: quietHoursStartInput.value });
+});
+
+quietHoursEndInput.addEventListener('change', async () => {
+  await saveQuietHours({ ...quietHours, end: quietHoursEndInput.value });
+});
+
 // ---- Onboarding ----
 onboardingNameInput.addEventListener('input', () => {
   onboardingContinueBtn.disabled = onboardingNameInput.value.trim().length === 0;
@@ -235,6 +363,7 @@ onboardingSkipBtn.addEventListener('click', () => finishOnboarding(null));
 // ---- Settings ----
 settingsBtn.addEventListener('click', () => {
   settingsNameInput.value = userName || '';
+  renderSettingsScreen();
   settingsScreen.hidden = false;
 });
 
@@ -265,6 +394,14 @@ async function scheduleNotification(reminder) {
   const [hour, minute] = reminder.time.split(':').map(Number);
   const recurrence = reminder.recurrence || { type: 'daily' };
   const body = getNotificationBody(reminder.name, userName);
+  // Quiet hours override the sound setting rather than delaying delivery —
+  // for a medication/routine reminder, arriving on time but silent is safer
+  // than arriving late. Omitting `sound` entirely is what makes a Capacitor
+  // local notification silent on iOS (see @capacitor/local-notifications'
+  // LocalNotificationSchema.sound docs).
+  const soundField = reminderDefaults.soundEnabled && !isWithinQuietHours(hour, minute, quietHours)
+    ? { sound: 'default' }
+    : {};
   let notifications;
 
   if (recurrence.type === 'daysOfWeek') {
@@ -274,7 +411,7 @@ async function scheduleNotification(reminder) {
       body,
       // Capacitor's weekday is 1-7 (Sunday=1); JS Date#getDay() is 0-6 (Sunday=0).
       schedule: { on: { weekday: dow + 1, hour, minute }, allowWhileIdle: true },
-      sound: 'default',
+      ...soundField,
     }));
   } else if (recurrence.type === 'monthlyDate') {
     notifications = [{
@@ -282,7 +419,7 @@ async function scheduleNotification(reminder) {
       title: 'Tally',
       body,
       schedule: { on: { day: recurrence.dayOfMonth, hour, minute }, allowWhileIdle: true },
-      sound: 'default',
+      ...soundField,
     }];
   } else if (recurrence.type === 'once') {
     const [y, m, d] = recurrence.date.split('-').map(Number);
@@ -291,7 +428,7 @@ async function scheduleNotification(reminder) {
       title: 'Tally',
       body,
       schedule: { at: new Date(y, m - 1, d, hour, minute), allowWhileIdle: true },
-      sound: 'default',
+      ...soundField,
     }];
   } else {
     notifications = [{
@@ -299,7 +436,7 @@ async function scheduleNotification(reminder) {
       title: 'Tally',
       body,
       schedule: { on: { hour, minute }, allowWhileIdle: true },
-      sound: 'default',
+      ...soundField,
     }];
   }
 
@@ -378,7 +515,7 @@ async function toggleTaken(id) {
   } else {
     const previousStreak = reminder.currentStreak;
     reminder.takenDate = today;
-    reminders[idx] = markReminderTaken(reminder, today);
+    reminders[idx] = markReminderTaken(reminder, today, graceOccurrencesForHours(reminderDefaults.gracePeriodHours));
     const newStreak = reminders[idx].currentStreak;
     if (newStreak !== previousStreak && isStreakMilestone(newStreak)) {
       showMilestoneModal(newStreak);
@@ -453,7 +590,7 @@ function render() {
         updateReminder(reminder.id, name, time, recurrence);
       });
     } else {
-      const onGrace = isOnGrace(reminder, today);
+      const onGrace = isOnGrace(reminder, today, graceOccurrencesForHours(reminderDefaults.gracePeriodHours));
       const streakBadge = isStreakEligible(reminder) && reminder.currentStreak > 0
         ? `<span class="streak-badge${onGrace ? ' streak-badge--grace' : ''}" title="Longest streak: ${reminder.longestStreak} day${reminder.longestStreak === 1 ? '' : 's'}">🔥 ${reminder.currentStreak}</span>`
         : '';
@@ -602,11 +739,24 @@ voiceCancelBtn.addEventListener('click', async () => {
 
 // ---- Init ----
 async function init() {
+  // Theme is applied first, before anything renders, to avoid a flash of
+  // the default color. This is fully reliable in the web preview (see the
+  // inline bootstrap script in index.html's <head>, which reads localStorage
+  // synchronously); on a native device, Preferences is backed by UserDefaults
+  // rather than localStorage, which isn't readable synchronously from JS
+  // before the page runs — so there, this is the earliest point a flash can
+  // be avoided, not a hard guarantee zero frames ever paint the default.
+  await loadAccentTheme();
+  applyAccentTheme();
+
   await loadUserName();
   renderGreeting();
+  await loadReminderDefaults();
+  await loadQuietHours();
   await loadReminders();
+  const graceOccurrences = graceOccurrencesForHours(reminderDefaults.gracePeriodHours);
   const previousStreaks = new Map(reminders.map(r => [r.id, r.currentStreak]));
-  reminders = checkStaleStreaks(reminders);
+  reminders = checkStaleStreaks(reminders, todayKey(), graceOccurrences);
   // One toast for the launch, even if several reminders' streaks broke while
   // the app was closed — this is meant to be a gentle nudge, not a list.
   const anyStreakReset = reminders.some(r => previousStreaks.get(r.id) > 0 && r.currentStreak === 0);

@@ -1,6 +1,29 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <script>
+    // Best-effort pre-paint theme apply. Only actually zero-flash in the web
+    // preview, where Preferences is backed by localStorage: on-device, the
+    // native Preferences plugin (UserDefaults) isn't readable synchronously
+    // from JS, so the real fix there is that init() applies the theme before
+    // rendering anything else — see the comment in src/main.js's init().
+    (function () {
+      try {
+        var THEMES = {
+          teal: ['#00d4c4', '#00a89a', '#d7f7f3'],
+          coral: ['#ff6b6b', '#e14b4b', '#ffe1e1'],
+          violet: ['#9b7fd4', '#7c5fc0', '#ece4f9'],
+          sky: ['#4ea8de', '#2f86c0', '#dcf0fb'],
+        };
+        var id = localStorage.getItem('CapacitorStorage.tally-accent-theme');
+        var t = THEMES[id] || THEMES.teal;
+        var root = document.documentElement.style;
+        root.setProperty('--accent-color', t[0]);
+        root.setProperty('--accent-color-dark', t[1]);
+        root.setProperty('--accent-color-light', t[2]);
+      } catch (e) {}
+    })();
+  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Tally</title>
@@ -74,8 +97,42 @@
         <h2>Settings</h2>
         <button type="button" id="settingsCloseBtn" class="btn-icon" aria-label="Close settings">✕</button>
       </div>
-      <label class="settings-label" for="settingsNameInput">Your name</label>
-      <input type="text" id="settingsNameInput" placeholder="Not set" maxlength="30" autocomplete="given-name">
+
+      <section class="settings-section">
+        <h3 class="settings-section-title">Personalization</h3>
+        <label class="settings-label" for="settingsNameInput">Your name</label>
+        <input type="text" id="settingsNameInput" placeholder="Not set" maxlength="30" autocomplete="given-name">
+      </section>
+
+      <section class="settings-section">
+        <h3 class="settings-section-title">Appearance</h3>
+        <label class="settings-label">Accent color</label>
+        <div id="themeSwatches" class="theme-swatches"></div>
+      </section>
+
+      <section class="settings-section">
+        <h3 class="settings-section-title">Reminders</h3>
+        <label class="settings-label">Grace period</label>
+        <div id="graceOptions" class="segmented-control"></div>
+        <label class="settings-label">Notification sound</label>
+        <div id="soundToggle" class="segmented-control"></div>
+      </section>
+
+      <section class="settings-section">
+        <h3 class="settings-section-title">Quiet Hours</h3>
+        <label class="settings-label">Deliver reminders silently overnight</label>
+        <div id="quietHoursToggle" class="segmented-control"></div>
+        <div id="quietHoursRange" class="quiet-hours-range" hidden>
+          <input type="time" id="quietHoursStart" aria-label="Quiet hours start">
+          <span class="quiet-hours-sep">to</span>
+          <input type="time" id="quietHoursEnd" aria-label="Quiet hours end">
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h3 class="settings-section-title">Privacy</h3>
+        <p class="settings-static-note">Tally stores everything locally on this device — no accounts, no analytics, and nothing ever leaves your phone.</p>
+      </section>
     </div>
   </div>
 

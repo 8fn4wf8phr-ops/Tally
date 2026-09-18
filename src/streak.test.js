@@ -201,6 +201,49 @@ test('checkStaleStreaks skips monthlyDate and once reminders entirely', () => {
   assert.equal(result[1].currentStreak, 1);
 });
 
+test('graceOccurrences=0 breaks the streak after missing even one occurrence', () => {
+  const yesterday = dateKey(base, -1);
+  const today = dateKey(base, 0);
+  const reminder = makeReminder({ currentStreak: 5, longestStreak: 5, lastCompletedDate: yesterday });
+  // On-time (no gap) still extends the streak even with zero grace.
+  const onTime = markReminderTaken(reminder, today, 0);
+  assert.equal(onTime.currentStreak, 6);
+
+  const twoDaysAgo = dateKey(base, -2);
+  const reminderWithGap = makeReminder({ currentStreak: 5, longestStreak: 5, lastCompletedDate: twoDaysAgo });
+  const afterGap = markReminderTaken(reminderWithGap, today, 0);
+  assert.equal(afterGap.currentStreak, 1);
+});
+
+test('graceOccurrences=2 forgives two missed occurrences', () => {
+  const threeDaysAgo = dateKey(base, -3);
+  const today = dateKey(base, 0);
+  const reminder = makeReminder({ currentStreak: 4, longestStreak: 4, lastCompletedDate: threeDaysAgo });
+  const result = markReminderTaken(reminder, today, 2);
+  assert.equal(result.currentStreak, 5);
+
+  const fourDaysAgo = dateKey(base, -4);
+  const reminderTooOld = makeReminder({ currentStreak: 4, longestStreak: 4, lastCompletedDate: fourDaysAgo });
+  const brokenResult = markReminderTaken(reminderTooOld, today, 2);
+  assert.equal(brokenResult.currentStreak, 1);
+});
+
+test('checkStaleStreaks honors a custom graceOccurrences value', () => {
+  const twoDaysAgo = dateKey(base, -2);
+  const today = dateKey(base, 0);
+  const reminders = [makeReminder({ currentStreak: 3, longestStreak: 3, lastCompletedDate: twoDaysAgo })];
+  // Default (1) forgives this gap; 0 does not.
+  assert.equal(checkStaleStreaks(reminders, today, 1)[0].currentStreak, 3);
+  assert.equal(checkStaleStreaks(reminders, today, 0)[0].currentStreak, 0);
+});
+
+test('isOnGrace with graceOccurrences=0 is always false (no in-between state)', () => {
+  const twoDaysAgo = dateKey(base, -2);
+  const today = dateKey(base, 0);
+  const reminder = makeReminder({ currentStreak: 3, longestStreak: 3, lastCompletedDate: twoDaysAgo });
+  assert.equal(isOnGrace(reminder, today, 0), false);
+});
+
 test('isOnGrace is always false for monthlyDate and once reminders', () => {
   const monthly = makeReminder({
     currentStreak: 3,

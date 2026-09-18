@@ -47,7 +47,22 @@ export function getPreviousScheduledDate(reminder, fromKey) {
   return subtractDays(fromKey, 1);
 }
 
-export function markReminderTaken(reminder, today = todayKey()) {
+// The set of scheduled occurrences before `fromKey` that still count as
+// "within grace" — `graceOccurrences` of them may be missed entirely.
+// graceOccurrences=1 (the long-standing default) walks back two occurrences:
+// the most recent one (on-time) and the one before it (one miss forgiven).
+function getGraceWindow(reminder, fromKey, graceOccurrences) {
+  const dates = [];
+  let cursor = fromKey;
+  for (let i = 0; i <= graceOccurrences; i++) {
+    cursor = getPreviousScheduledDate(reminder, cursor);
+    if (cursor === null) break;
+    dates.push(cursor);
+  }
+  return dates;
+}
+
+export function markReminderTaken(reminder, today = todayKey(), graceOccurrences = 1) {
   // monthlyDate and once reminders don't track streaks at all — completion
   // itself is already recorded elsewhere (takenDate), so just no-op here.
   if (!isStreakEligible(reminder)) {
@@ -60,11 +75,7 @@ export function markReminderTaken(reminder, today = todayKey()) {
     return reminder;
   }
 
-  const prev1 = getPreviousScheduledDate(reminder, today);
-  const prev2 = prev1 !== null ? getPreviousScheduledDate(reminder, prev1) : null;
-  // Grace period: landing on either of the two most recent expected
-  // occurrences means at most one occurrence was missed.
-  const withinGrace = reminder.lastCompletedDate === prev1 || reminder.lastCompletedDate === prev2;
+  const withinGrace = getGraceWindow(reminder, today, graceOccurrences).includes(reminder.lastCompletedDate);
 
   const updated = { ...reminder };
   updated.currentStreak = withinGrace ? reminder.currentStreak + 1 : 1;
@@ -77,29 +88,24 @@ export function markReminderTaken(reminder, today = todayKey()) {
   return updated;
 }
 
-export function isOnGrace(reminder, today = todayKey()) {
+export function isOnGrace(reminder, today = todayKey(), graceOccurrences = 1) {
   if (!isStreakEligible(reminder)) return false;
   if (!reminder.currentStreak || !reminder.lastCompletedDate || reminder.lastCompletedDate === today) {
     return false;
   }
-  const prev1 = getPreviousScheduledDate(reminder, today);
-  if (prev1 === null) return false;
-  const prev2 = getPreviousScheduledDate(reminder, prev1);
-  // On grace: the most recent scheduled occurrence was missed, but the one
-  // before it wasn't — today is the last chance before the streak breaks.
-  return reminder.lastCompletedDate !== prev1 && reminder.lastCompletedDate === prev2;
+  const window = getGraceWindow(reminder, today, graceOccurrences);
+  if (window.length === 0) return false;
+  // On grace: at least one occurrence was missed (not the most recent/on-time
+  // one), but the streak hasn't broken yet — today is the last chance.
+  return reminder.lastCompletedDate !== window[0] && window.includes(reminder.lastCompletedDate);
 }
 
-export function checkStaleStreaks(reminders, today = todayKey()) {
+export function checkStaleStreaks(reminders, today = todayKey(), graceOccurrences = 1) {
   return reminders.map(reminder => {
     if (!isStreakEligible(reminder)) return reminder;
     if (!reminder.lastCompletedDate || reminder.lastCompletedDate === today) return reminder;
 
-    const prev1 = getPreviousScheduledDate(reminder, today);
-    if (prev1 === null) return reminder;
-    const prev2 = getPreviousScheduledDate(reminder, prev1);
-
-    const withinGrace = reminder.lastCompletedDate === prev1 || reminder.lastCompletedDate === prev2;
+    const withinGrace = getGraceWindow(reminder, today, graceOccurrences).includes(reminder.lastCompletedDate);
     if (!withinGrace) {
       return { ...reminder, currentStreak: 0 };
     }

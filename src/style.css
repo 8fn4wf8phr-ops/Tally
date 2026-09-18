@@ -10,11 +10,10 @@
   --color-card: #ffffff;
   --color-text: #1c2420;
   --color-muted: #7c8781;
-  --color-accent: #0ea383;
-  --color-accent-dark: #0b7d65;
-  --color-accent-light: #e3f5ef;
+  --accent-color: #00d4c4;
+  --accent-color-dark: #00a89a;
+  --accent-color-light: #d7f7f3;
   --color-border: #e7e1d6;
-  --color-taken-bg: #e3f5ef;
   --color-danger: #d6455a;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -62,7 +61,7 @@ body {
   margin-left: 6px;
   margin-bottom: 4px;
   border-radius: 50%;
-  background: var(--color-accent);
+  background: var(--accent-color);
 }
 
 .greeting {
@@ -87,8 +86,8 @@ body {
 }
 
 .btn-icon:active {
-  background: var(--color-accent-light);
-  color: var(--color-accent-dark);
+  background: var(--accent-color-light);
+  color: var(--accent-color-dark);
 }
 
 /* ---- Permission banner ---- */
@@ -114,7 +113,7 @@ body {
 }
 
 .btn-small {
-  background: var(--color-accent);
+  background: var(--accent-color);
   color: #fff;
   border: none;
   border-radius: 10px;
@@ -159,7 +158,7 @@ body {
   border-radius: 50%;
   border: 1px solid var(--color-border);
   background: var(--color-card);
-  color: var(--color-accent-dark);
+  color: var(--accent-color-dark);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -168,13 +167,13 @@ body {
 }
 
 .btn-mic:active {
-  background: var(--color-accent-light);
-  border-color: var(--color-accent);
+  background: var(--accent-color-light);
+  border-color: var(--accent-color);
 }
 
 .btn-mic.listening {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
+  background: var(--accent-color);
+  border-color: var(--accent-color);
   color: #fff;
 }
 
@@ -206,7 +205,7 @@ body {
 
 .add-form input:focus {
   outline: none;
-  border-color: var(--color-accent);
+  border-color: var(--accent-color);
 }
 
 .recurrence-fields {
@@ -237,7 +236,7 @@ body {
 .day-of-month-input:focus,
 .once-date-input:focus {
   outline: none;
-  border-color: var(--color-accent);
+  border-color: var(--accent-color);
 }
 
 .weekdays-picker {
@@ -264,14 +263,14 @@ body {
 }
 
 .weekday-btn.selected {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
+  background: var(--accent-color);
+  border-color: var(--accent-color);
   color: #fff;
 }
 
 .btn-add {
   flex: 0 0 auto;
-  background: var(--color-accent);
+  background: var(--accent-color);
   color: #fff;
   border: none;
   border-radius: 14px;
@@ -279,14 +278,14 @@ body {
   font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 6px 16px -4px rgba(14, 163, 131, 0.5);
+  box-shadow: 0 6px 16px -4px color-mix(in srgb, var(--accent-color) 50%, transparent);
   transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
 }
 
 .btn-add:active {
-  background: var(--color-accent-dark);
+  background: var(--accent-color-dark);
   transform: scale(0.96);
-  box-shadow: 0 3px 10px -4px rgba(14, 163, 131, 0.5);
+  box-shadow: 0 3px 10px -4px color-mix(in srgb, var(--accent-color) 50%, transparent);
 }
 
 /* ---- Empty state ---- */
@@ -324,8 +323,8 @@ body {
 }
 
 .reminder-item.taken {
-  background: var(--color-taken-bg);
-  border-color: #bfe6da;
+  background: var(--accent-color-light);
+  border-color: color-mix(in srgb, var(--accent-color) 40%, white);
 }
 
 .check-btn {
@@ -346,8 +345,8 @@ body {
 }
 
 .reminder-item.taken .check-btn {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
+  background: var(--accent-color);
+  border-color: var(--accent-color);
   transform: scale(1.1);
 }
 
@@ -386,8 +385,8 @@ body {
   gap: 3px;
   font-size: 0.85rem;
   font-weight: 700;
-  color: var(--color-accent-dark);
-  background: var(--color-accent-light);
+  color: var(--accent-color-dark);
+  background: var(--accent-color-light);
   border-radius: 999px;
   padding: 4px 9px;
   white-space: nowrap;
@@ -457,7 +456,7 @@ body {
 }
 
 .btn-save {
-  background: var(--color-accent);
+  background: var(--accent-color);
   color: #fff;
 }
 
@@ -508,7 +507,7 @@ body {
   width: 4px;
   height: 10px;
   border-radius: 2px;
-  background: var(--color-accent);
+  background: var(--accent-color);
   animation: voice-wave 1.1s ease-in-out infinite;
 }
 
@@ -563,6 +562,7 @@ body {
   align-items: center;
   justify-content: center;
   padding: calc(20px + var(--safe-top)) 20px calc(20px + var(--safe-bottom));
+  overflow-y: auto;
   z-index: 200;
 }
 
@@ -601,7 +601,7 @@ body {
 
 .fullscreen-card input[type="text"]:focus {
   outline: none;
-  border-color: var(--color-accent);
+  border-color: var(--accent-color);
 }
 
 .fullscreen-card .btn-add:disabled {
@@ -634,6 +634,108 @@ body {
   margin-top: 8px;
 }
 
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.settings-section:first-of-type {
+  padding-top: 0;
+  border-top: none;
+}
+
+.settings-section-title {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.settings-static-note {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--color-muted);
+}
+
+/* ---- Theme swatches ---- */
+.theme-swatches {
+  display: flex;
+  gap: 12px;
+}
+
+.theme-swatch {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  padding: 0;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.theme-swatch.selected {
+  border-color: var(--color-text);
+  transform: scale(1.08);
+}
+
+/* ---- Segmented control (grace period, on/off toggles) ---- */
+.segmented-control {
+  display: flex;
+  gap: 6px;
+}
+
+.segmented-btn {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.segmented-btn.selected {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+  color: #fff;
+}
+
+/* ---- Quiet hours time range ---- */
+.quiet-hours-range {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.quiet-hours-range[hidden] {
+  display: none;
+}
+
+.quiet-hours-range input[type="time"] {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-text);
+  font-size: 0.95rem;
+}
+
+.quiet-hours-range input[type="time"]:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+
+.quiet-hours-sep {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
 /* ---- Streak milestone modal ---- */
 .milestone-modal {
   position: fixed;
@@ -653,7 +755,7 @@ body {
 .milestone-modal-card {
   width: 100%;
   max-width: 340px;
-  background: var(--color-accent);
+  background: var(--accent-color);
   border-radius: 20px;
   padding: 28px 24px;
   box-shadow: 0 20px 40px -12px rgba(28, 36, 32, 0.35);
@@ -675,8 +777,8 @@ body {
   transform: translateX(-50%);
   width: calc(100% - 40px);
   max-width: 360px;
-  background: var(--color-accent-light);
-  border: 1px solid var(--color-accent);
+  background: var(--accent-color-light);
+  border: 1px solid var(--accent-color);
   border-radius: 14px;
   padding: 12px 18px;
   box-shadow: 0 10px 24px -10px rgba(28, 36, 32, 0.25);
@@ -691,5 +793,5 @@ body {
   text-align: center;
   font-size: 0.9rem;
   font-weight: 600;
-  color: var(--color-accent-dark);
+  color: var(--accent-color-dark);
 }
