@@ -15,6 +15,9 @@ import {
   normalizeGreetingStyle,
   GRACE_PERIOD_OPTIONS,
   DEFAULT_REMINDER_DEFAULTS,
+  REMINDER_COLORS,
+  normalizeReminderColor,
+  getReminderColorHex,
   graceOccurrencesForHours,
   DEFAULT_QUIET_HOURS,
   isWithinQuietHours,
@@ -45,6 +48,8 @@ const addForm = document.getElementById('addForm');
 const nameInput = document.getElementById('nameInput');
 const timeInput = document.getElementById('timeInput');
 const recurrenceFieldsEl = document.getElementById('recurrenceFields');
+const colorFieldsEl = document.getElementById('colorFields');
+const defaultColorEl = document.getElementById('defaultColorSwatches');
 const permissionBanner = document.getElementById('permissionBanner');
 const enableNotifsBtn = document.getElementById('enableNotifsBtn');
 const micBtn = document.getElementById('micBtn');
@@ -137,6 +142,35 @@ function readRecurrenceFromForm(root) {
   return { type: 'daily' };
 }
 
+// ---- Reminder color picker ----
+// One swatch per palette color, plus a leading "match the app theme" swatch
+// (value null) — the look every reminder had before colors existed.
+function renderColorSwatches(selectedId) {
+  const auto = `<button type="button" class="color-swatch color-swatch--auto${selectedId ? '' : ' selected'}" data-color="" aria-label="Match app theme" title="Match app theme"></button>`;
+  const swatches = REMINDER_COLORS.map(c => `
+    <button type="button" class="color-swatch${c.id === selectedId ? ' selected' : ''}" data-color="${c.id}" style="background:${c.hex}" aria-label="${c.label}" title="${c.label}"></button>
+  `).join('');
+  return auto + swatches;
+}
+
+function wireColorSwatches(container, onChange) {
+  container.querySelectorAll('.color-swatch').forEach(btn => {
+    btn.addEventListener('click', () => {
+      container.querySelectorAll('.color-swatch').forEach(b => b.classList.toggle('selected', b === btn));
+      if (onChange) onChange(btn.dataset.color || null);
+    });
+  });
+}
+
+function readColorFromContainer(container) {
+  return normalizeReminderColor(container.querySelector('.color-swatch.selected')?.dataset.color);
+}
+
+function renderAddFormColor() {
+  colorFieldsEl.innerHTML = renderColorSwatches(reminderDefaults.defaultColor);
+  wireColorSwatches(colorFieldsEl);
+}
+
 function ordinal(n) {
   if (n % 10 === 1 && n !== 11) return `${n}st`;
   if (n % 10 === 2 && n !== 12) return `${n}nd`;
@@ -184,6 +218,7 @@ async function loadReminders() {
     lastCompletedDate: null,
     recurrence: { type: 'daily' },
     ...r,
+    color: normalizeReminderColor(r.color),
   }));
   const { value: idValue } = await Preferences.get({ key: NEXT_ID_KEY });
   nextId = idValue ? parseInt(idValue, 10) : 1;
@@ -308,6 +343,7 @@ async function loadReminderDefaults() {
   reminderDefaults = value
     ? { ...DEFAULT_REMINDER_DEFAULTS, ...JSON.parse(value) }
     : { ...DEFAULT_REMINDER_DEFAULTS };
+  reminderDefaults.defaultColor = normalizeReminderColor(reminderDefaults.defaultColor);
 }
 
 async function saveReminderDefaults(next) {
@@ -371,6 +407,12 @@ function renderSettingsScreen() {
       renderSettingsScreen();
       render(); // grace period affects the isOnGrace badge shown on each reminder
     });
+  });
+
+  defaultColorEl.innerHTML = renderColorSwatches(reminderDefaults.defaultColor);
+  wireColorSwatches(defaultColorEl, async (id) => {
+    await saveReminderDefaults({ ...reminderDefaults, defaultColor: id });
+    renderAddFormColor(); // new reminders start from the new default
   });
 
   renderOnOffToggle(soundToggleEl, reminderDefaults.soundEnabled, async (enabled) => {
@@ -545,12 +587,13 @@ enableNotifsBtn.addEventListener('click', async () => {
 });
 
 // ---- CRUD ----
-async function addReminder(name, time, recurrence) {
+async function addReminder(name, time, recurrence, color) {
   const reminder = {
     id: nextId++,
     name,
     time,
     recurrence,
+    color,
     takenDate: null,
     currentStreak: 0,
     longestStreak: 0,
@@ -595,13 +638,14 @@ async function deleteReminder(id) {
   render();
 }
 
-async function updateReminder(id, name, time, recurrence) {
+async function updateReminder(id, name, time, recurrence, color) {
   const reminder = reminders.find(r => r.id === id);
   if (!reminder) return;
   await cancelNotification(reminder); // cancel using the OLD recurrence's notification ids first
   reminder.name = name;
   reminder.time = time;
   reminder.recurrence = recurrence;
+  reminder.color = color;
   await saveReminders();
   await scheduleNotification(reminder);
   editingId = null;
@@ -636,12 +680,14 @@ function render() {
           <input type="time" class="edit-time" value="${reminder.time}">
         </div>
         <div class="recurrence-fields">${renderRecurrenceFields(reminder.recurrence)}</div>
+        <div class="color-fields">${renderColorSwatches(reminder.color)}</div>
         <div class="edit-actions">
           <button type="button" class="btn-cancel">Cancel</button>
           <button type="button" class="btn-save">Save</button>
         </div>
       `;
       wireRecurrenceControls(item);
+      wireColorSwatches(item.querySelector('.color-fields'));
       item.querySelector('.btn-cancel').addEventListener('click', () => {
         editingId = null;
         render();
@@ -651,7 +697,7 @@ function render() {
         const time = item.querySelector('.edit-time').value;
         const recurrence = readRecurrenceFromForm(item);
         if (!name || !time || !recurrence) return;
-        updateReminder(reminder.id, name, time, recurrence);
+        updateReminder(reminder.id, name, time, recurrence, readColorFromContainer(item));
       });
     } else {
       const onGrace = isOnGrace(reminder, today, graceOccurrencesForHours(reminderDefaults.gracePeriodHours));
@@ -659,7 +705,9 @@ function render() {
         ? `<span class="streak-badge${onGrace ? ' streak-badge--grace' : ''}" title="Longest streak: ${reminder.longestStreak} day${reminder.longestStreak === 1 ? '' : 's'}">🔥 ${reminder.currentStreak}</span>`
         : '';
       const recurrenceLabel = describeRecurrence(reminder.recurrence);
-      item.className = 'reminder-item' + (taken ? ' taken' : '');
+      const colorHex = getReminderColorHex(reminder.color);
+      item.className = 'reminder-item' + (taken ? ' taken' : '') + (colorHex ? ' has-color' : '');
+      if (colorHex) item.style.setProperty('--reminder-color', colorHex);
       item.innerHTML = `
         <button class="check-btn" aria-label="${taken ? 'Mark not taken' : 'Mark taken'}">${taken ? '✓' : ''}</button>
         <div class="reminder-info">
@@ -684,6 +732,7 @@ function render() {
 // ---- Add form ----
 recurrenceFieldsEl.innerHTML = renderRecurrenceFields();
 wireRecurrenceControls(addForm);
+renderAddFormColor();
 
 addForm.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -691,12 +740,13 @@ addForm.addEventListener('submit', async (e) => {
   const time = timeInput.value;
   const recurrence = readRecurrenceFromForm(addForm);
   if (!name || !time || !recurrence) return;
-  await addReminder(name, time, recurrence);
+  await addReminder(name, time, recurrence, readColorFromContainer(colorFieldsEl));
   nameInput.value = '';
   timeInput.value = '';
   voiceTimeHint.hidden = true;
   recurrenceFieldsEl.innerHTML = renderRecurrenceFields();
   wireRecurrenceControls(addForm);
+  renderAddFormColor();
   nameInput.focus();
 });
 
@@ -817,6 +867,7 @@ async function init() {
   await loadGreetingStyle();
   renderGreeting();
   await loadReminderDefaults();
+  renderAddFormColor();
   await loadQuietHours();
   await loadReminders();
   const graceOccurrences = graceOccurrencesForHours(reminderDefaults.gracePeriodHours);

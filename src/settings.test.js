@@ -4,6 +4,9 @@ import {
   ACCENT_THEMES,
   DEFAULT_ACCENT_THEME,
   getAccentTheme,
+  normalizeReminderColor,
+  getReminderColorHex,
+  REMINDER_COLORS,
   normalizeGreetingStyle,
   graceOccurrencesForHours,
   isWithinQuietHours,
@@ -14,6 +17,31 @@ test('normalizeGreetingStyle keeps valid styles and defaults anything else to si
   assert.equal(normalizeGreetingStyle('simple'), 'simple');
   assert.equal(normalizeGreetingStyle(null), 'simple');
   assert.equal(normalizeGreetingStyle('bogus'), 'simple');
+});
+
+test('accent themes include the six offered colors', () => {
+  assert.deepEqual(Object.keys(ACCENT_THEMES), ['teal', 'coral', 'violet', 'sky', 'indigo', 'mint']);
+  assert.equal(getAccentTheme('indigo').accent, '#6c7ce0');
+  assert.equal(getAccentTheme('mint').accent, '#5fd9b0');
+});
+
+test('reminder palette has 11 colors with unique ids and hexes', () => {
+  assert.equal(REMINDER_COLORS.length, 11);
+  assert.equal(new Set(REMINDER_COLORS.map(c => c.id)).size, 11);
+  assert.equal(new Set(REMINDER_COLORS.map(c => c.hex)).size, 11);
+});
+
+test('normalizeReminderColor keeps known ids and turns everything else into null', () => {
+  assert.equal(normalizeReminderColor('amber'), 'amber');
+  assert.equal(normalizeReminderColor('nope'), null);
+  assert.equal(normalizeReminderColor(undefined), null);
+  assert.equal(normalizeReminderColor(null), null);
+  assert.equal(normalizeReminderColor('toString'), null);
+});
+
+test('getReminderColorHex resolves ids and returns null for no color', () => {
+  assert.equal(getReminderColorHex('slate'), '#7d8ba1');
+  assert.equal(getReminderColorHex(null), null);
 });
 
 test('getAccentTheme returns the requested theme', () => {

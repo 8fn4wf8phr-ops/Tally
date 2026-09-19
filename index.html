@@ -14,6 +14,8 @@
           coral: ['#ff6b6b', '#e14b4b', '#ffe1e1'],
           violet: ['#9b7fd4', '#7c5fc0', '#ece4f9'],
           sky: ['#4ea8de', '#2f86c0', '#dcf0fb'],
+          indigo: ['#6c7ce0', '#4f5fc4', '#e3e6fa'],
+          mint: ['#5fd9b0', '#34b98c', '#daf7ed'],
         };
         var id = localStorage.getItem('CapacitorStorage.tally-accent-theme');
         var t = THEMES[id] || THEMES.teal;
@@ -56,6 +58,7 @@
       <input type="time" id="timeInput" required>
       <span id="voiceTimeHint" class="voice-time-hint" hidden>Please confirm this guessed time</span>
       <div id="recurrenceFields" class="recurrence-fields"></div>
+      <div id="colorFields" class="color-fields"></div>
       <button type="submit" id="addBtn" class="btn-add">Add</button>
     </form>
 
@@ -118,6 +121,8 @@
         <div id="graceOptions" class="segmented-control"></div>
         <label class="settings-label">Notification sound</label>
         <div id="soundToggle" class="segmented-control"></div>
+        <label class="settings-label">Default reminder color</label>
+        <div id="defaultColorSwatches" class="color-fields"></div>
       </section>
 
       <section class="settings-section">
