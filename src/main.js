@@ -1,13 +1,18 @@
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Preferences } from '@capacitor/preferences';
+import { Badge } from '@capawesome/capacitor-badge';
 import { markReminderTaken, checkStaleStreaks, isOnGrace, isStreakEligible, todayKey } from './streak.js';
 import { parseVoiceInput } from './voice.js';
 import { isVoiceAvailable, ensureVoicePermissions, startListening } from './voiceInput.js';
-import { getGreeting, getEmptyStateMessage, isStreakMilestone, getMilestoneMessage, getStreakResetMessage, getNotificationBody } from './personalization.js';
+import { getContextualGreeting, getEmptyStateMessage, isStreakMilestone, getMilestoneMessage, isStreakAcknowledgment, getStreakAcknowledgment, getStreakResetMessage, getNotificationBody } from './personalization.js';
+import { getPendingToday, countOverdue } from './due.js';
 import {
   ACCENT_THEMES,
   DEFAULT_ACCENT_THEME,
   getAccentTheme,
+  GREETING_STYLES,
+  DEFAULT_GREETING_STYLE,
+  normalizeGreetingStyle,
   GRACE_PERIOD_OPTIONS,
   DEFAULT_REMINDER_DEFAULTS,
   graceOccurrencesForHours,
@@ -23,12 +28,14 @@ const ONBOARDED_KEY = 'tally-onboarded';
 const ACCENT_THEME_KEY = 'tally-accent-theme';
 const REMINDER_DEFAULTS_KEY = 'tally-reminder-defaults';
 const QUIET_HOURS_KEY = 'tally-quiet-hours';
+const GREETING_STYLE_KEY = 'tally-greeting-style';
 
 let reminders = [];
 let nextId = 1;
 let editingId = null;
 let userName = null;
 let accentTheme = DEFAULT_ACCENT_THEME;
+let greetingStyle = DEFAULT_GREETING_STYLE;
 let reminderDefaults = { ...DEFAULT_REMINDER_DEFAULTS };
 let quietHours = { ...DEFAULT_QUIET_HOURS };
 
@@ -52,6 +59,7 @@ const settingsBtn = document.getElementById('settingsBtn');
 const settingsScreen = document.getElementById('settingsScreen');
 const settingsCloseBtn = document.getElementById('settingsCloseBtn');
 const settingsNameInput = document.getElementById('settingsNameInput');
+const greetingStyleToggleEl = document.getElementById('greetingStyleToggle');
 const themeSwatchesEl = document.getElementById('themeSwatches');
 const graceOptionsEl = document.getElementById('graceOptions');
 const soundToggleEl = document.getElementById('soundToggle');
@@ -204,8 +212,45 @@ async function saveUserName(name) {
   }
 }
 
+async function loadGreetingStyle() {
+  const { value } = await Preferences.get({ key: GREETING_STYLE_KEY });
+  greetingStyle = normalizeGreetingStyle(value);
+}
+
+async function saveGreetingStyle(style) {
+  greetingStyle = normalizeGreetingStyle(style);
+  await Preferences.set({ key: GREETING_STYLE_KEY, value: greetingStyle });
+}
+
 function renderGreeting() {
-  greetingEl.textContent = getGreeting(userName);
+  greetingEl.textContent = getContextualGreeting({
+    style: greetingStyle,
+    pendingTitles: getPendingToday(reminders).map(r => r.name),
+    name: userName,
+  });
+}
+
+// ---- App icon badge ----
+// Count of reminders whose time has passed today and aren't taken yet. Runs
+// off the reminder list alone — no name or preference dependency. Only talks
+// to the plugin when the count actually changes, because on iOS clearing the
+// badge also clears delivered notifications from Notification Center.
+let lastBadgeCount = null;
+
+async function updateBadge() {
+  const count = countOverdue(reminders);
+  if (count === lastBadgeCount) return;
+  lastBadgeCount = count;
+  try {
+    if (count > 0) {
+      await Badge.set({ count });
+    } else {
+      await Badge.clear();
+    }
+  } catch (e) {
+    // Unsupported (plain browser) or badge permission not granted yet.
+    console.warn('Could not update badge', e);
+  }
 }
 
 let milestoneTimer = null;
@@ -296,6 +341,17 @@ function renderOnOffToggle(container, value, onChange) {
 }
 
 function renderSettingsScreen() {
+  greetingStyleToggleEl.innerHTML = GREETING_STYLES.map(style => `
+    <button type="button" class="segmented-btn${style.value === greetingStyle ? ' selected' : ''}" data-style="${style.value}">${style.label}</button>
+  `).join('');
+  greetingStyleToggleEl.querySelectorAll('.segmented-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await saveGreetingStyle(btn.dataset.style);
+      renderSettingsScreen();
+      renderGreeting();
+    });
+  });
+
   themeSwatchesEl.innerHTML = Object.entries(ACCENT_THEMES).map(([id, theme]) => `
     <button type="button" class="theme-swatch${id === accentTheme ? ' selected' : ''}" data-theme="${id}" style="background:${theme.accent}" aria-label="${theme.label} theme"></button>
   `).join('');
@@ -480,6 +536,8 @@ enableNotifsBtn.addEventListener('click', async () => {
     if (result.display === 'granted') {
       permissionBanner.hidden = true;
       await rescheduleAll();
+      lastBadgeCount = null; // badge permission is granted along with notifications
+      updateBadge();
     }
   } catch (e) {
     console.error('Could not request notification permission', e);
@@ -517,8 +575,12 @@ async function toggleTaken(id) {
     reminder.takenDate = today;
     reminders[idx] = markReminderTaken(reminder, today, graceOccurrencesForHours(reminderDefaults.gracePeriodHours));
     const newStreak = reminders[idx].currentStreak;
-    if (newStreak !== previousStreak && isStreakMilestone(newStreak)) {
-      showMilestoneModal(newStreak);
+    if (newStreak !== previousStreak) {
+      if (isStreakMilestone(newStreak)) {
+        showMilestoneModal(newStreak);
+      } else if (isStreakAcknowledgment(newStreak)) {
+        showToast(getStreakAcknowledgment(newStreak, userName));
+      }
     }
   }
   await saveReminders();
@@ -550,6 +612,8 @@ async function updateReminder(id, name, time, recurrence) {
 function render() {
   listEl.innerHTML = '';
   const today = todayKey();
+  renderGreeting();
+  updateBadge();
 
   if (reminders.length === 0) {
     emptyStateEl.querySelector('#emptyStateMessage').textContent = getEmptyStateMessage(userName);
@@ -750,6 +814,7 @@ async function init() {
   applyAccentTheme();
 
   await loadUserName();
+  await loadGreetingStyle();
   renderGreeting();
   await loadReminderDefaults();
   await loadQuietHours();
@@ -773,5 +838,11 @@ async function init() {
     onboardingScreen.hidden = false;
   }
 }
+
+// Coming back from the background: refresh the greeting and badge, since
+// time has passed and reminders may have become overdue.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) render();
+});
 
 init();

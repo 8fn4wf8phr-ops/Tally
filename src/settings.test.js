@@ -4,9 +4,17 @@ import {
   ACCENT_THEMES,
   DEFAULT_ACCENT_THEME,
   getAccentTheme,
+  normalizeGreetingStyle,
   graceOccurrencesForHours,
   isWithinQuietHours,
 } from './settings.js';
+
+test('normalizeGreetingStyle keeps valid styles and defaults anything else to simple', () => {
+  assert.equal(normalizeGreetingStyle('detailed'), 'detailed');
+  assert.equal(normalizeGreetingStyle('simple'), 'simple');
+  assert.equal(normalizeGreetingStyle(null), 'simple');
+  assert.equal(normalizeGreetingStyle('bogus'), 'simple');
+});
 
 test('getAccentTheme returns the requested theme', () => {
   assert.equal(getAccentTheme('coral').accent, '#ff6b6b');

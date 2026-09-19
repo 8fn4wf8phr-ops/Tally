@@ -2,6 +2,21 @@
 // theme, reminder defaults, quiet hours) — DOM/Capacitor-free, same pattern
 // as streak.js / personalization.js.
 
+// ---- Greeting style ----
+// 'simple' is the plain "Good morning, {name}"; 'detailed' also surfaces
+// what's still on today's list. Simple is the default so nothing changes
+// for anyone until they opt in.
+export const GREETING_STYLES = [
+  { value: 'simple', label: 'Simple' },
+  { value: 'detailed', label: 'Detailed' },
+];
+
+export const DEFAULT_GREETING_STYLE = 'simple';
+
+export function normalizeGreetingStyle(value) {
+  return GREETING_STYLES.some(s => s.value === value) ? value : DEFAULT_GREETING_STYLE;
+}
+
 // ---- Accent theme ----
 // "Teal" is #00d4c4 — this is now the app's one formally-named default
 // accent, replacing the old ad-hoc #0ea383 that was never actually named

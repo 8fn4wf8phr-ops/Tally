@@ -24,6 +24,42 @@ export function getGreeting(name, date = new Date()) {
   return name ? `${label}, ${name}` : label;
 }
 
+// ---- Contextual ("Detailed") greeting ----
+// Exactly one reminder left today -> rotate through these; more than one ->
+// a count-based line. Each named variant has a name-free counterpart at the
+// same index so the tone stays matched without a name.
+const DUE_ONE_NAMED = [
+  '{title} is up next, {name}.',
+  "Don't forget {title}, {name}.",
+  'First up: {title}, {name}.',
+  '{name}, {title} is on deck.',
+];
+
+const DUE_ONE_GENERIC = [
+  '{title} is up next.',
+  "Don't forget {title}.",
+  'First up: {title}.',
+  '{title} is on deck.',
+];
+
+export function getDueReminderPhrase(title, name, random = Math.random()) {
+  const pool = name ? DUE_ONE_NAMED : DUE_ONE_GENERIC;
+  const template = pool[Math.floor(random * pool.length)];
+  return template.replace('{title}', title).replace('{name}', name || '');
+}
+
+export function getDueCountMessage(count, name) {
+  return name ? `${count} left on your list today, ${name}.` : `${count} left on your list today.`;
+}
+
+// 'simple' (or nothing pending) is the plain time-of-day greeting; 'detailed'
+// swaps in what's actually coming up.
+export function getContextualGreeting({ style, pendingTitles, name, date = new Date(), random = Math.random() }) {
+  if (style !== 'detailed' || pendingTitles.length === 0) return getGreeting(name, date);
+  if (pendingTitles.length === 1) return getDueReminderPhrase(pendingTitles[0], name, random);
+  return getDueCountMessage(pendingTitles.length, name);
+}
+
 const EMPTY_STATE_MESSAGES = {
   morning: {
     named: [
@@ -86,6 +122,24 @@ export function getMilestoneMessage(streak, name) {
   const label = MILESTONE_LABELS[streak];
   if (!label) return null;
   return name ? `${label}, ${name} 🔥` : `${label} 🔥`;
+}
+
+// Small early-streak nudges, shown as a toast (the 7/30/100/365 milestones
+// above get the full modal instead).
+const STREAK_ACK_LABELS = {
+  3: 'Three in a row',
+  5: 'Five days',
+};
+
+export function isStreakAcknowledgment(streak) {
+  return Object.hasOwn(STREAK_ACK_LABELS, streak);
+}
+
+export function getStreakAcknowledgment(streak, name) {
+  const label = STREAK_ACK_LABELS[streak];
+  if (!label) return null;
+  const suffix = streak === 5 ? ' — building a habit' : '';
+  return name ? `${label}, ${name}${suffix}.` : `${label}${suffix}.`;
 }
 
 // Low-pressure — deliberately no exclamation points or "you failed" framing.
