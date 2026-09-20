@@ -5,7 +5,7 @@ import { markReminderTaken, checkStaleStreaks, isOnGrace, isStreakEligible, toda
 import { parseVoiceInput } from './voice.js';
 import { isVoiceAvailable, ensureVoicePermissions, startListening } from './voiceInput.js';
 import { getContextualGreeting, getEmptyStateMessage, isStreakMilestone, getMilestoneMessage, isStreakAcknowledgment, getStreakAcknowledgment, getStreakResetMessage, getNotificationBody } from './personalization.js';
-import { getPendingToday, countOverdue } from './due.js';
+import { getPendingToday, countOverdue, isExpiredOneTime } from './due.js';
 import {
   ringProgress,
   ringDashOffset,
@@ -652,6 +652,12 @@ async function scheduleNotification(reminder) {
   const soundField = reminderDefaults.soundEnabled && !isWithinQuietHours(hour, minute, quietHours)
     ? { sound: 'default' }
     : {};
+  // The badge lights up when the reminder fires even if the app is closed —
+  // iOS runs none of our code then, so it has to ride on the notification.
+  // A scheduled notification can only carry a fixed number, so it says 1
+  // ("something is due"); the app replaces it with the true count of overdue
+  // reminders whenever it's opened or backgrounded.
+  const deliveryFields = { ...soundField, badge: 1 };
   let notifications;
 
   if (recurrence.type === 'daysOfWeek') {
@@ -661,7 +667,7 @@ async function scheduleNotification(reminder) {
       body,
       // Capacitor's weekday is 1-7 (Sunday=1); JS Date#getDay() is 0-6 (Sunday=0).
       schedule: { on: { weekday: dow + 1, hour, minute }, allowWhileIdle: true },
-      ...soundField,
+      ...deliveryFields,
     }));
   } else if (recurrence.type === 'monthlyDate') {
     notifications = [{
@@ -669,7 +675,7 @@ async function scheduleNotification(reminder) {
       title: 'Tally',
       body,
       schedule: { on: { day: recurrence.dayOfMonth, hour, minute }, allowWhileIdle: true },
-      ...soundField,
+      ...deliveryFields,
     }];
   } else if (recurrence.type === 'once') {
     const [y, m, d] = recurrence.date.split('-').map(Number);
@@ -678,7 +684,7 @@ async function scheduleNotification(reminder) {
       title: 'Tally',
       body,
       schedule: { at: new Date(y, m - 1, d, hour, minute), allowWhileIdle: true },
-      ...soundField,
+      ...deliveryFields,
     }];
   } else {
     notifications = [{
@@ -686,7 +692,7 @@ async function scheduleNotification(reminder) {
       title: 'Tally',
       body,
       schedule: { on: { hour, minute }, allowWhileIdle: true },
-      ...soundField,
+      ...deliveryFields,
     }];
   }
 
@@ -707,7 +713,9 @@ async function cancelNotification(reminder) {
 }
 
 async function rescheduleAll() {
+  const now = new Date();
   for (const reminder of reminders) {
+    if (isExpiredOneTime(reminder, now)) continue;
     await scheduleNotification(reminder);
   }
 }
@@ -723,6 +731,12 @@ async function checkPermissions() {
     return false;
   }
 }
+
+// A notification that arrives while the app is open doesn't touch the badge
+// (see presentationOptions in capacitor.config.json); just re-count.
+LocalNotifications.addListener('localNotificationReceived', () => updateBadge()).catch(() => {
+  // Not running in the native shell (plain browser preview).
+});
 
 enableNotifsBtn.addEventListener('click', async () => {
   try {
@@ -1195,7 +1209,9 @@ async function init() {
   if (anyStreakReset) {
     showToast(getStreakResetMessage(userName));
   }
-  await checkPermissions();
+  // Re-sync scheduled notifications on every launch so reminders scheduled
+  // before a change (like the badge) pick it up. Same ids replace the old ones.
+  if (await checkPermissions()) await rescheduleAll();
   micBtn.hidden = !(await isVoiceAvailable());
 
   const { value: onboarded } = await Preferences.get({ key: ONBOARDED_KEY });
@@ -1204,10 +1220,18 @@ async function init() {
   }
 }
 
-// Coming back from the background: refresh the greeting and badge, since
-// time has passed and reminders may have become overdue.
+// Backgrounding and resuming: keep the greeting and the icon badge honest,
+// since time passes and reminders become overdue while we're not looking.
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) render();
+  if (document.hidden) {
+    // Leaving the app: make sure the icon shows the current overdue count.
+    updateBadge();
+  } else {
+    // A notification may have set the badge natively while we were away, so
+    // forget what we last set and re-sync instead of trusting it.
+    lastBadgeCount = null;
+    render();
+  }
 });
 
 init();

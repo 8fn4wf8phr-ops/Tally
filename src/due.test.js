@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { appliesToday, isPendingToday, isOverdue, getPendingToday, countOverdue } from './due.js';
+import { appliesToday, isPendingToday, isOverdue, isExpiredOneTime, getPendingToday, countOverdue } from './due.js';
 import { todayKey } from './streak.js';
 
 // 2024-01-10 is a Wednesday.
@@ -73,6 +73,20 @@ test('getPendingToday returns applicable untaken reminders, soonest first', () =
     makeReminder({ id: 4, time: '07:00', recurrence: { type: 'daysOfWeek', daysOfWeek: [2] } }),
   ];
   assert.deepEqual(getPendingToday(reminders, at(10)).map(r => r.id), [2, 1]);
+});
+
+test('isExpiredOneTime is true only for a one-time reminder whose moment has passed', () => {
+  const once = date => makeReminder({ time: '09:00', recurrence: { type: 'once', date } });
+  assert.equal(isExpiredOneTime(once('2024-01-10'), at(9, 1)), true);   // same day, time passed
+  assert.equal(isExpiredOneTime(once('2024-01-10'), at(8, 59)), false); // same day, still ahead
+  assert.equal(isExpiredOneTime(once('2024-01-09'), at(8)), true);      // earlier date
+  assert.equal(isExpiredOneTime(once('2024-01-11'), at(23)), false);    // later date
+});
+
+test('isExpiredOneTime is false for recurring reminders', () => {
+  assert.equal(isExpiredOneTime(makeReminder(), at(23)), false);
+  assert.equal(isExpiredOneTime(makeReminder({ recurrence: { type: 'monthlyDate', dayOfMonth: 1 } }), at(23)), false);
+  assert.equal(isExpiredOneTime(makeReminder({ recurrence: undefined }), at(23)), false);
 });
 
 test('countOverdue counts only pending reminders whose time has passed', () => {

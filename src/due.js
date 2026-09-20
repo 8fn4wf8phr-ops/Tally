@@ -20,6 +20,16 @@ export function appliesToday(reminder, date = new Date()) {
   return true;
 }
 
+// A one-time reminder whose date and time have already passed has nothing
+// left to schedule.
+export function isExpiredOneTime(reminder, date = new Date()) {
+  const recurrence = reminder.recurrence;
+  if (!recurrence || recurrence.type !== 'once') return false;
+  const [y, m, d] = recurrence.date.split('-').map(Number);
+  const [h, min] = reminder.time.split(':').map(Number);
+  return new Date(y, m - 1, d, h, min) <= date;
+}
+
 export function isPendingToday(reminder, date = new Date()) {
   return appliesToday(reminder, date) && reminder.takenDate !== todayKey(date);
 }

@@ -1,5 +1,14 @@
 {
   "appId": "com.jacquezmonroe.tally",
   "appName": "Tally",
-  "webDir": "dist"
+  "webDir": "dist",
+  "plugins": {
+    "LocalNotifications": {
+      "presentationOptions": [
+        "banner",
+        "list",
+        "sound"
+      ]
+    }
+  }
 }
