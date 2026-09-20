@@ -7,6 +7,14 @@ import { isVoiceAvailable, ensureVoicePermissions, startListening } from './voic
 import { getContextualGreeting, getEmptyStateMessage, isStreakMilestone, getMilestoneMessage, isStreakAcknowledgment, getStreakAcknowledgment, getStreakResetMessage, getNotificationBody } from './personalization.js';
 import { getPendingToday, countOverdue } from './due.js';
 import {
+  ringProgress,
+  ringDashOffset,
+  SWIPE_ACTION_WIDTH,
+  clampSwipe,
+  resolveSwipeSnap,
+  isConfettiMilestone,
+} from './motion.js';
+import {
   ACCENT_THEMES,
   DEFAULT_ACCENT_THEME,
   getAccentTheme,
@@ -41,6 +49,10 @@ let accentTheme = DEFAULT_ACCENT_THEME;
 let greetingStyle = DEFAULT_GREETING_STYLE;
 let reminderDefaults = { ...DEFAULT_REMINDER_DEFAULTS };
 let quietHours = { ...DEFAULT_QUIET_HOURS };
+let justTakenId = null; // only this row plays the checkmark draw-in
+let openSwipeId = null; // the row currently swiped open, if any
+let activeSettingsTab = 'personal';
+const ringProgressById = new Map(); // last-rendered ring fill, so changes can animate
 
 const listEl = document.getElementById('reminderList');
 const emptyStateEl = document.getElementById('emptyState');
@@ -80,6 +92,21 @@ const milestoneModal = document.getElementById('milestoneModal');
 const milestoneMessageEl = document.getElementById('milestoneMessage');
 const toastEl = document.getElementById('toast');
 const toastMessageEl = document.getElementById('toastMessage');
+const appEl = document.getElementById('app');
+const skeletonEl = document.getElementById('skeletonList');
+const confettiEl = document.getElementById('confetti');
+const settingsTabsEl = document.getElementById('settingsTabs');
+const openAddBtn = document.getElementById('openAddBtn');
+const addScreen = document.getElementById('addScreen');
+const addCloseBtn = document.getElementById('addCloseBtn');
+const editScreen = document.getElementById('editScreen');
+const editForm = document.getElementById('editForm');
+const editCloseBtn = document.getElementById('editCloseBtn');
+const editCancelBtn = document.getElementById('editCancelBtn');
+const editNameInput = document.getElementById('editNameInput');
+const editTimeInput = document.getElementById('editTimeInput');
+const editRecurrenceFieldsEl = document.getElementById('editRecurrenceFields');
+const editColorFieldsEl = document.getElementById('editColorFields');
 
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -142,6 +169,83 @@ function readRecurrenceFromForm(root) {
   return { type: 'daily' };
 }
 
+// ---- Motion helpers ----
+function prefersReducedMotion() {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+// Adds an animation class, resolves when it finishes (with a timeout as a
+// safety net), and always cleans the class up.
+function playAnimation(el, className) {
+  return new Promise(resolve => {
+    if (prefersReducedMotion()) {
+      resolve();
+      return;
+    }
+    const done = () => {
+      clearTimeout(timer);
+      el.removeEventListener('animationend', onEnd);
+      el.classList.remove(className);
+      resolve();
+    };
+    const onEnd = (e) => {
+      if (e.target === el) done();
+    };
+    // Safety net only: if animationend never arrives (app backgrounded
+    // mid-slide, say) the UI must not hang. Generous so it never cuts a slide short.
+    const timer = setTimeout(done, 1000);
+    el.addEventListener('animationend', onEnd);
+    el.classList.add(className);
+  });
+}
+
+function bounce(el) {
+  if (!el) return;
+  el.classList.remove('just-selected');
+  void el.offsetWidth; // restart the animation if it's already running
+  el.classList.add('just-selected');
+  el.addEventListener('animationend', () => el.classList.remove('just-selected'), { once: true });
+}
+
+// Push navigation: the incoming screen slides in from the right while the
+// outgoing one slides off to the left.
+function pushScreen(incoming, outgoing) {
+  incoming.hidden = false;
+  return Promise.all([
+    playAnimation(incoming, 'anim-in-right'),
+    playAnimation(outgoing, 'anim-out-left'),
+  ]);
+}
+
+// Back navigation: the reverse. The leaving screen is hidden in the same
+// tick its animation ends, so it can't flash back at its resting position.
+function popScreen(leaving, returning) {
+  return Promise.all([
+    playAnimation(leaving, 'anim-out-right').then(() => { leaving.hidden = true; }),
+    playAnimation(returning, 'anim-in-left'),
+  ]);
+}
+
+const CONFETTI_COLORS = ['#ffffff', '#ffe08a', '#ffb3c1', '#c7f0ff', '#d9ccff'];
+
+// Particles are generated here, but the motion itself is pure CSS keyframes.
+function burstConfetti() {
+  confettiEl.innerHTML = '';
+  if (prefersReducedMotion()) return;
+  const count = 24;
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2 + Math.random() * 0.4;
+    const distance = 90 + Math.random() * 80;
+    const piece = document.createElement('span');
+    piece.style.setProperty('--dx', `${Math.cos(angle) * distance}px`);
+    piece.style.setProperty('--dy', `${Math.sin(angle) * distance - 30}px`); // slight upward bias
+    piece.style.setProperty('--rot', `${Math.round(Math.random() * 540 - 270)}deg`);
+    piece.style.setProperty('--delay', `${Math.round(Math.random() * 120)}ms`);
+    piece.style.setProperty('--c', CONFETTI_COLORS[i % CONFETTI_COLORS.length]);
+    confettiEl.appendChild(piece);
+  }
+}
+
 // ---- Reminder color picker ----
 // One swatch per palette color, plus a leading "match the app theme" swatch
 // (value null) — the look every reminder had before colors existed.
@@ -157,6 +261,7 @@ function wireColorSwatches(container, onChange) {
   container.querySelectorAll('.color-swatch').forEach(btn => {
     btn.addEventListener('click', () => {
       container.querySelectorAll('.color-swatch').forEach(b => b.classList.toggle('selected', b === btn));
+      bounce(btn);
       if (onChange) onChange(btn.dataset.color || null);
     });
   });
@@ -295,6 +400,11 @@ function showMilestoneModal(streak) {
   if (!message) return;
   clearTimeout(milestoneTimer);
   milestoneMessageEl.textContent = message;
+  if (isConfettiMilestone(streak)) {
+    burstConfetti();
+  } else {
+    confettiEl.innerHTML = '';
+  }
   milestoneModal.hidden = false;
   milestoneTimer = setTimeout(() => {
     milestoneModal.hidden = true;
@@ -393,8 +503,10 @@ function renderSettingsScreen() {
   `).join('');
   themeSwatchesEl.querySelectorAll('.theme-swatch').forEach(btn => {
     btn.addEventListener('click', async () => {
-      await saveAccentTheme(btn.dataset.theme);
+      const themeId = btn.dataset.theme;
+      await saveAccentTheme(themeId);
       renderSettingsScreen();
+      bounce(themeSwatchesEl.querySelector(`[data-theme="${themeId}"]`));
     });
   });
 
@@ -445,9 +557,13 @@ onboardingNameInput.addEventListener('input', () => {
 async function finishOnboarding(name) {
   await saveUserName(name);
   await Preferences.set({ key: ONBOARDED_KEY, value: 'true' });
-  onboardingScreen.hidden = true;
   renderGreeting();
   render();
+  // Onboarding exits left as the home screen enters from the right.
+  await Promise.all([
+    playAnimation(onboardingScreen, 'anim-out-left').then(() => { onboardingScreen.hidden = true; }),
+    playAnimation(appEl, 'anim-in-right'),
+  ]);
 }
 
 onboardingContinueBtn.addEventListener('click', () => {
@@ -459,15 +575,51 @@ onboardingContinueBtn.addEventListener('click', () => {
 onboardingSkipBtn.addEventListener('click', () => finishOnboarding(null));
 
 // ---- Settings ----
-settingsBtn.addEventListener('click', () => {
-  settingsNameInput.value = userName || '';
-  renderSettingsScreen();
-  settingsScreen.hidden = false;
+function showSettingsTab(tab) {
+  activeSettingsTab = tab;
+  settingsTabsEl.querySelectorAll('.segmented-btn').forEach(btn => {
+    const active = btn.dataset.tab === tab;
+    btn.classList.toggle('selected', active);
+    btn.setAttribute('aria-selected', String(active));
+  });
+  // Panels share one grid cell, so toggling this class cross-fades them.
+  settingsScreen.querySelectorAll('.settings-panel').forEach(panel => {
+    panel.classList.toggle('is-active', panel.dataset.panel === tab);
+  });
+}
+
+settingsTabsEl.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-tab]');
+  if (btn) showSettingsTab(btn.dataset.tab);
 });
 
-settingsCloseBtn.addEventListener('click', () => {
-  settingsScreen.hidden = true;
-});
+// Every full-screen screen (settings, add, edit) opens and closes through
+// these, so they all share the same slide and can't be triggered mid-slide.
+let screenBusy = false;
+
+async function openScreen(screen, prepare) {
+  if (screenBusy) return false;
+  screenBusy = true;
+  if (prepare) prepare();
+  await pushScreen(screen, appEl);
+  screenBusy = false;
+  return true;
+}
+
+async function closeScreen(screen) {
+  if (screenBusy) return;
+  screenBusy = true;
+  await popScreen(screen, appEl);
+  screenBusy = false;
+}
+
+settingsBtn.addEventListener('click', () => openScreen(settingsScreen, () => {
+  settingsNameInput.value = userName || '';
+  renderSettingsScreen();
+  showSettingsTab(activeSettingsTab);
+}));
+
+settingsCloseBtn.addEventListener('click', () => closeScreen(settingsScreen));
 
 settingsNameInput.addEventListener('blur', async () => {
   await saveUserName(settingsNameInput.value.trim());
@@ -615,6 +767,7 @@ async function toggleTaken(id) {
     reminder.takenDate = null;
   } else {
     const previousStreak = reminder.currentStreak;
+    justTakenId = id;
     reminder.takenDate = today;
     reminders[idx] = markReminderTaken(reminder, today, graceOccurrencesForHours(reminderDefaults.gracePeriodHours));
     const newStreak = reminders[idx].currentStreak;
@@ -628,9 +781,11 @@ async function toggleTaken(id) {
   }
   await saveReminders();
   render();
+  justTakenId = null;
 }
 
 async function deleteReminder(id) {
+  if (openSwipeId === id) openSwipeId = null;
   const reminder = reminders.find(r => r.id === id);
   reminders = reminders.filter(r => r.id !== id);
   await saveReminders();
@@ -652,8 +807,124 @@ async function updateReminder(id, name, time, recurrence, color) {
   render();
 }
 
+// ---- Streak ring + swipe-to-delete ----
+const RING_RADIUS = 17;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+
+function closeOpenSwipe() {
+  const row = listEl.querySelector('.swipe-row.is-open');
+  openSwipeId = null;
+  if (!row) return;
+  row.classList.remove('is-open', 'is-swiping');
+  row.querySelector('.reminder-item').style.transform = '';
+}
+
+// Horizontal drag on a row: follows the finger, then snaps open or closed
+// depending on how far it was pulled (see resolveSwipeSnap). Vertical drags
+// are left alone so the list still scrolls.
+function wireSwipe(row, item, id) {
+  let tracking = false;
+  let dragging = false;
+  let startX = 0;
+  let startY = 0;
+  let startOffset = 0;
+  let lastOffset = 0;
+  let suppressClick = false;
+
+  item.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (openSwipeId !== null && openSwipeId !== id) closeOpenSwipe();
+    tracking = true;
+    dragging = false;
+    startX = e.clientX;
+    startY = e.clientY;
+    startOffset = openSwipeId === id ? -SWIPE_ACTION_WIDTH : 0;
+    lastOffset = startOffset;
+  });
+
+  item.addEventListener('pointermove', (e) => {
+    if (!tracking) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    if (!dragging) {
+      if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) {
+        tracking = false; // it's a scroll, not a swipe
+        return;
+      }
+      if (Math.abs(dx) < 8) return;
+      dragging = true;
+      row.classList.add('is-dragging', 'is-swiping');
+      item.setPointerCapture(e.pointerId);
+    }
+    lastOffset = clampSwipe(startOffset + dx);
+    item.style.transform = `translateX(${lastOffset}px)`;
+  });
+
+  const finish = () => {
+    if (!tracking) return;
+    tracking = false;
+    if (!dragging) return;
+    dragging = false;
+    suppressClick = true;
+    setTimeout(() => { suppressClick = false; }, 50);
+    row.classList.remove('is-dragging');
+    if (resolveSwipeSnap(lastOffset) === 'open') {
+      openSwipeId = id;
+      row.classList.add('is-open', 'is-swiping');
+      item.style.transform = `translateX(-${SWIPE_ACTION_WIDTH}px)`;
+    } else {
+      if (openSwipeId === id) openSwipeId = null;
+      row.classList.remove('is-open', 'is-swiping');
+      item.style.transform = '';
+    }
+  };
+  item.addEventListener('pointerup', finish);
+  item.addEventListener('pointercancel', finish);
+
+  // Capture phase: swallow the click that ends a drag, and make a tap on an
+  // open row close it instead of triggering whatever was underneath.
+  item.addEventListener('click', (e) => {
+    if (suppressClick) {
+      e.stopPropagation();
+      e.preventDefault();
+    } else if (openSwipeId === id) {
+      e.stopPropagation();
+      e.preventDefault();
+      closeOpenSwipe();
+    }
+  }, true);
+}
+
+document.addEventListener('pointerdown', (e) => {
+  if (openSwipeId !== null && !e.target.closest('.swipe-row.is-open')) closeOpenSwipe();
+});
+
+// Pins the row's height so it can transition to 0, then deletes for real once
+// the collapse finishes (with a timeout fallback).
+function removeWithAnimation(row, id) {
+  if (row.classList.contains('is-removing')) return;
+  row.style.height = `${row.offsetHeight}px`;
+  void row.offsetHeight;
+  row.classList.add('is-removing');
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    deleteReminder(id);
+  };
+  row.addEventListener('transitionend', (e) => {
+    if (e.target === row && e.propertyName === 'height') finish();
+  });
+  setTimeout(finish, 450);
+}
+
+function checkSvg(animate) {
+  return `<svg class="check-svg${animate ? ' check-svg--draw' : ''}" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" pathLength="1"/></svg>`;
+}
+
 // ---- Rendering ----
 function render() {
+  skeletonEl.remove(); // real data is here; no-op after the first render
   listEl.innerHTML = '';
   const today = todayKey();
   renderGreeting();
@@ -671,68 +942,84 @@ function render() {
   sorted.forEach(reminder => {
     const taken = reminder.takenDate === today;
     const item = document.createElement('div');
+    let node = item;
+    let ringTargetOffset = null;
 
-    if (editingId === reminder.id) {
-      item.className = 'reminder-item editing';
-      item.innerHTML = `
-        <div class="edit-row">
-          <input type="text" class="edit-name" value="${escapeHtml(reminder.name)}" maxlength="60">
-          <input type="time" class="edit-time" value="${reminder.time}">
-        </div>
-        <div class="recurrence-fields">${renderRecurrenceFields(reminder.recurrence)}</div>
-        <div class="color-fields">${renderColorSwatches(reminder.color)}</div>
-        <div class="edit-actions">
-          <button type="button" class="btn-cancel">Cancel</button>
-          <button type="button" class="btn-save">Save</button>
-        </div>
-      `;
-      wireRecurrenceControls(item);
-      wireColorSwatches(item.querySelector('.color-fields'));
-      item.querySelector('.btn-cancel').addEventListener('click', () => {
-        editingId = null;
-        render();
-      });
-      item.querySelector('.btn-save').addEventListener('click', () => {
-        const name = item.querySelector('.edit-name').value.trim();
-        const time = item.querySelector('.edit-time').value;
-        const recurrence = readRecurrenceFromForm(item);
-        if (!name || !time || !recurrence) return;
-        updateReminder(reminder.id, name, time, recurrence, readColorFromContainer(item));
-      });
-    } else {
-      const onGrace = isOnGrace(reminder, today, graceOccurrencesForHours(reminderDefaults.gracePeriodHours));
-      const streakBadge = isStreakEligible(reminder) && reminder.currentStreak > 0
-        ? `<span class="streak-badge${onGrace ? ' streak-badge--grace' : ''}" title="Longest streak: ${reminder.longestStreak} day${reminder.longestStreak === 1 ? '' : 's'}">🔥 ${reminder.currentStreak}</span>`
-        : '';
-      const recurrenceLabel = describeRecurrence(reminder.recurrence);
-      const colorHex = getReminderColorHex(reminder.color);
-      item.className = 'reminder-item' + (taken ? ' taken' : '') + (colorHex ? ' has-color' : '');
-      if (colorHex) item.style.setProperty('--reminder-color', colorHex);
-      item.innerHTML = `
-        <button class="check-btn" aria-label="${taken ? 'Mark not taken' : 'Mark taken'}">${taken ? '✓' : ''}</button>
-        <div class="reminder-info">
-          <span class="reminder-name">${escapeHtml(reminder.name)}</span>
-          <span class="reminder-time">${formatTime(reminder.time)}${recurrenceLabel ? ` · ${recurrenceLabel}` : ''}</span>
-        </div>
-        ${streakBadge}
-        <button class="delete-btn" aria-label="Delete">✕</button>
-      `;
-      item.querySelector('.check-btn').addEventListener('click', () => toggleTaken(reminder.id));
-      item.querySelector('.reminder-info').addEventListener('click', () => {
-        editingId = reminder.id;
-        render();
-      });
-      item.querySelector('.delete-btn').addEventListener('click', () => deleteReminder(reminder.id));
+    const onGrace = isOnGrace(reminder, today, graceOccurrencesForHours(reminderDefaults.gracePeriodHours));
+    let streakRing = '';
+    if (isStreakEligible(reminder)) {
+      const progress = ringProgress(reminder.currentStreak);
+      // Start from the last rendered fill so a changed count animates; a
+      // first render (or unchanged count) has nothing to animate.
+      const previous = ringProgressById.has(reminder.id) ? ringProgressById.get(reminder.id) : progress;
+      ringProgressById.set(reminder.id, progress);
+      if (reminder.currentStreak > 0) {
+        ringTargetOffset = ringDashOffset(progress, RING_CIRCUMFERENCE);
+        streakRing = `
+          <span class="streak-ring${onGrace ? ' streak-ring--grace' : ''}" title="Longest streak: ${reminder.longestStreak} day${reminder.longestStreak === 1 ? '' : 's'}">
+            <svg viewBox="0 0 38 38" aria-hidden="true">
+              <circle class="ring-track" cx="19" cy="19" r="${RING_RADIUS}"/>
+              <circle class="ring-fill" cx="19" cy="19" r="${RING_RADIUS}" stroke-dasharray="${RING_CIRCUMFERENCE}" style="stroke-dashoffset:${ringDashOffset(previous, RING_CIRCUMFERENCE)}"/>
+            </svg>
+            <span class="streak-ring-count">${reminder.currentStreak}</span>
+          </span>`;
+      }
     }
+    const recurrenceLabel = describeRecurrence(reminder.recurrence);
+    const colorHex = getReminderColorHex(reminder.color);
+    item.className = 'reminder-item' + (taken ? ' taken' : '') + (colorHex ? ' has-color' : '');
+    if (colorHex) item.style.setProperty('--reminder-color', colorHex);
+    item.innerHTML = `
+      <button class="check-btn" aria-label="${taken ? 'Mark not taken' : 'Mark taken'}">${taken ? checkSvg(justTakenId === reminder.id) : ''}</button>
+      <div class="reminder-info">
+        <span class="reminder-name">${escapeHtml(reminder.name)}</span>
+        <span class="reminder-time">${formatTime(reminder.time)}${recurrenceLabel ? ` · ${recurrenceLabel}` : ''}</span>
+      </div>
+      ${streakRing}
+      <button class="delete-btn" aria-label="Delete">✕</button>
+    `;
+    item.querySelector('.check-btn').addEventListener('click', () => toggleTaken(reminder.id));
+    item.querySelector('.reminder-info').addEventListener('click', () => openEdit(reminder.id));
 
-    listEl.appendChild(item);
+    // Wrap in a swipe row: the delete action sits behind the item and is
+    // revealed as the item slides left.
+    const row = document.createElement('div');
+    row.className = 'swipe-row' + (openSwipeId === reminder.id ? ' is-open is-swiping' : '');
+    row.innerHTML = '<button type="button" class="swipe-action" aria-label="Delete reminder">Delete</button>';
+    row.appendChild(item);
+    if (openSwipeId === reminder.id) item.style.transform = `translateX(-${SWIPE_ACTION_WIDTH}px)`;
+    wireSwipe(row, item, reminder.id);
+    row.querySelector('.swipe-action').addEventListener('click', () => removeWithAnimation(row, reminder.id));
+    item.querySelector('.delete-btn').addEventListener('click', () => removeWithAnimation(row, reminder.id));
+    node = row;
+
+    listEl.appendChild(node);
+    if (ringTargetOffset !== null) {
+      const fill = item.querySelector('.ring-fill');
+      void fill.getBoundingClientRect(); // commit the starting offset so the change transitions
+      fill.style.strokeDashoffset = ringTargetOffset;
+    }
   });
 }
 
-// ---- Add form ----
-recurrenceFieldsEl.innerHTML = renderRecurrenceFields();
-wireRecurrenceControls(addForm);
-renderAddFormColor();
+// ---- Add screen ----
+function resetAddForm() {
+  nameInput.value = '';
+  timeInput.value = '';
+  voiceTimeHint.hidden = true;
+  recurrenceFieldsEl.innerHTML = renderRecurrenceFields();
+  wireRecurrenceControls(addForm);
+  renderAddFormColor();
+}
+
+resetAddForm();
+
+openAddBtn.addEventListener('click', async () => {
+  const opened = await openScreen(addScreen, resetAddForm);
+  if (opened) nameInput.focus();
+});
+
+addCloseBtn.addEventListener('click', () => closeScreen(addScreen));
 
 addForm.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -741,13 +1028,40 @@ addForm.addEventListener('submit', async (e) => {
   const recurrence = readRecurrenceFromForm(addForm);
   if (!name || !time || !recurrence) return;
   await addReminder(name, time, recurrence, readColorFromContainer(colorFieldsEl));
-  nameInput.value = '';
-  timeInput.value = '';
-  voiceTimeHint.hidden = true;
-  recurrenceFieldsEl.innerHTML = renderRecurrenceFields();
-  wireRecurrenceControls(addForm);
-  renderAddFormColor();
-  nameInput.focus();
+  closeScreen(addScreen);
+});
+
+// ---- Edit screen ----
+function openEdit(id) {
+  const reminder = reminders.find(r => r.id === id);
+  if (!reminder) return;
+  openScreen(editScreen, () => {
+    editingId = id;
+    editNameInput.value = reminder.name;
+    editTimeInput.value = reminder.time;
+    editRecurrenceFieldsEl.innerHTML = renderRecurrenceFields(reminder.recurrence);
+    wireRecurrenceControls(editForm);
+    editColorFieldsEl.innerHTML = renderColorSwatches(reminder.color);
+    wireColorSwatches(editColorFieldsEl);
+  });
+}
+
+function closeEdit() {
+  editingId = null;
+  closeScreen(editScreen);
+}
+
+editCloseBtn.addEventListener('click', closeEdit);
+editCancelBtn.addEventListener('click', closeEdit);
+
+editForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = editNameInput.value.trim();
+  const time = editTimeInput.value;
+  const recurrence = readRecurrenceFromForm(editForm);
+  if (!name || !time || !recurrence || editingId === null) return;
+  await updateReminder(editingId, name, time, recurrence, readColorFromContainer(editColorFieldsEl));
+  closeEdit();
 });
 
 timeInput.addEventListener('input', () => {

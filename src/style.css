@@ -17,10 +17,16 @@
   --color-danger: #d6455a;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* One shared transition list. Theme changes animate the *consuming*
+     properties (background/border/color/shadow) — transitioning the custom
+     property itself isn't reliable. `scale` carries the press feedback. */
+  --transition-ui: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease, scale 0.12s ease, opacity 0.2s ease;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 html, body {
   height: 100%;
+  overflow-x: hidden; /* slide transitions briefly push content sideways */
 }
 
 body {
@@ -82,7 +88,7 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: var(--transition-ui);
 }
 
 .btn-icon:active {
@@ -163,7 +169,7 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition: var(--transition-ui);
 }
 
 .btn-mic:active {
@@ -259,7 +265,7 @@ body {
   font-size: 0.85rem;
   font-weight: 700;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition: var(--transition-ui);
 }
 
 .weekday-btn.selected {
@@ -279,12 +285,11 @@ body {
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 6px 16px -4px color-mix(in srgb, var(--accent-color) 50%, transparent);
-  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+  transition: var(--transition-ui);
 }
 
 .btn-add:active {
   background: var(--accent-color-dark);
-  transform: scale(0.96);
   box-shadow: 0 3px 10px -4px color-mix(in srgb, var(--accent-color) 50%, transparent);
 }
 
@@ -319,7 +324,7 @@ body {
   border-radius: 16px;
   padding: 14px 16px;
   box-shadow: 0 2px 8px -4px rgba(28, 36, 32, 0.08);
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: var(--transition-ui);
 }
 
 .reminder-item.taken {
@@ -341,7 +346,8 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.15s ease, border-color 0.15s ease;
+  /* later transform entry wins: the springy pop when a reminder is checked */
+  transition: var(--transition-ui), transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 /* --rc is this reminder's color, or the app accent when it has none, so
@@ -394,22 +400,51 @@ body {
   color: var(--color-muted);
 }
 
-.streak-badge {
+/* ---- Streak progress ring ---- */
+.streak-ring {
+  position: relative;
   flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--accent-color-dark);
-  background: var(--accent-color-light);
-  border-radius: 999px;
-  padding: 4px 9px;
-  white-space: nowrap;
+  justify-content: center;
 }
 
-.streak-badge--grace {
+.streak-ring--grace {
   opacity: 0.5;
+}
+
+.streak-ring svg {
+  position: absolute;
+  inset: 0;
+  transform: rotate(-90deg);
+}
+
+.ring-track,
+.ring-fill {
+  fill: none;
+  stroke-width: 3;
+}
+
+.ring-track {
+  /* translucent so it stays visible on the tinted taken-state background too */
+  stroke: color-mix(in srgb, var(--accent-color) 22%, transparent);
+  transition: stroke 0.25s ease;
+}
+
+.ring-fill {
+  stroke: var(--accent-color);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.4s var(--ease-out), stroke 0.25s ease;
+}
+
+.streak-ring-count {
+  position: relative;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent-color-dark);
+  transition: color 0.25s ease;
 }
 
 .delete-btn {
@@ -429,34 +464,8 @@ body {
 }
 
 /* ---- Inline edit mode ---- */
-.reminder-item.editing {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 10px;
-}
-
-.edit-row {
-  display: flex;
-  gap: 8px;
-}
-
-.edit-row input[type="text"] {
-  flex: 1.4;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--color-border);
-  font-size: 0.95rem;
-}
-
-.edit-row input[type="time"] {
-  flex: 1;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--color-border);
-  font-size: 0.95rem;
-}
-
 .edit-actions {
+  flex: 1 1 100%;
   display: flex;
   gap: 8px;
   justify-content: flex-end;
@@ -491,7 +500,7 @@ body {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  z-index: 100;
+  z-index: 260;
 }
 
 .voice-overlay[hidden] {
@@ -575,8 +584,6 @@ body {
   inset: 0;
   background: var(--color-bg);
   display: flex;
-  align-items: center;
-  justify-content: center;
   padding: calc(20px + var(--safe-top)) 20px calc(20px + var(--safe-bottom));
   overflow-y: auto;
   z-index: 200;
@@ -586,9 +593,12 @@ body {
   display: none;
 }
 
+/* auto margins center the card when it's short, but (unlike align-items:
+   center) still let a tall one scroll from its top instead of clipping it */
 .fullscreen-card {
   width: 100%;
   max-width: 400px;
+  margin: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -650,19 +660,6 @@ body {
   margin-top: 8px;
 }
 
-.settings-section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 16px;
-  border-top: 1px solid var(--color-border);
-}
-
-.settings-section:first-of-type {
-  padding-top: 0;
-  border-top: none;
-}
-
 .settings-section-title {
   font-size: 1rem;
   font-weight: 800;
@@ -687,7 +684,7 @@ body {
   border: 3px solid transparent;
   padding: 0;
   cursor: pointer;
-  transition: border-color 0.15s ease, transform 0.15s ease;
+  transition: var(--transition-ui);
 }
 
 .theme-swatch.selected {
@@ -713,7 +710,7 @@ body {
   border: 3px solid transparent;
   padding: 0;
   cursor: pointer;
-  transition: border-color 0.15s ease, transform 0.15s ease;
+  transition: var(--transition-ui);
 }
 
 .color-swatch.selected {
@@ -743,7 +740,7 @@ body {
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition: var(--transition-ui);
 }
 
 .segmented-btn.selected {
@@ -842,4 +839,295 @@ body {
   font-size: 0.9rem;
   font-weight: 600;
   color: var(--accent-color-dark);
+}
+
+/* =====================================================================
+   Animation pass — all CSS, all short (120-400ms), calm rather than playful
+   ===================================================================== */
+
+/* ---- Press feedback: one shared rule for every button-like control ---- */
+/* Uses the individual `scale` property so it composes with the
+   `transform: scale(...)` some states already set (e.g. selected swatches). */
+button:not(:disabled):active {
+  scale: 0.95;
+}
+
+/* Accent consumers that had no transition of their own, so a theme change
+   fades their color instead of snapping. */
+.app-header h1::after,
+.btn-small,
+input,
+select,
+.toast,
+.milestone-modal-card {
+  transition: var(--transition-ui);
+}
+
+/* ---- Checkmark draw-in ---- */
+.check-svg {
+  width: 16px;
+  height: 16px;
+}
+
+.check-svg path {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
+/* Only the row that was just checked animates; already-taken rows render
+   fully drawn so a re-render never replays it. */
+.check-svg--draw path {
+  stroke-dashoffset: 1;
+  animation: check-draw 0.3s ease-out 0.08s forwards;
+}
+
+@keyframes check-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+/* ---- Selection bounce (color + theme swatches) ---- */
+.just-selected {
+  animation: select-bounce 0.32s ease-out;
+}
+
+@keyframes select-bounce {
+  0% { scale: 1; }
+  45% { scale: 1.2; }
+  100% { scale: 1; }
+}
+
+/* ---- Swipe-to-delete ---- */
+.swipe-row {
+  position: relative;
+}
+
+.swipe-action {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 84px;
+  border: none;
+  border-radius: 16px;
+  background: var(--color-danger);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, scale 0.12s ease;
+}
+
+.swipe-row.is-swiping .swipe-action,
+.swipe-row.is-open .swipe-action {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.swipe-row > .reminder-item {
+  position: relative;
+  touch-action: pan-y; /* vertical scroll stays native; horizontal drags are ours */
+  transition: var(--transition-ui), transform 0.28s var(--ease-out);
+}
+
+.swipe-row.is-dragging > .reminder-item {
+  transition: var(--transition-ui), transform 0s;
+}
+
+/* Collapse-and-fade on delete. JS pins the height first so it can animate. */
+.swipe-row.is-removing {
+  overflow: hidden;
+  height: 0 !important;
+  margin-top: -10px; /* cancels the list's flex gap as the row closes */
+  opacity: 0;
+  transition: height 0.3s var(--ease-out), margin-top 0.3s var(--ease-out), opacity 0.22s ease;
+}
+
+/* ---- Confetti (30 / 100 / 365-day milestones only) ---- */
+.milestone-modal-card {
+  position: relative;
+}
+
+.confetti {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.confetti span {
+  position: absolute;
+  width: 8px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--c);
+  opacity: 0;
+  animation: confetti-burst 0.8s cubic-bezier(0.15, 0.7, 0.3, 1) var(--delay) forwards;
+}
+
+@keyframes confetti-burst {
+  0% { opacity: 1; transform: translate(0, 0) rotate(0deg) scale(0.6); }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(1); }
+}
+
+/* ---- Screen transitions (push: incoming from the right, outgoing to the left) ---- */
+.anim-in-right { animation: screen-in-right 0.32s var(--ease-out) both; }
+.anim-out-left { animation: screen-out-left 0.32s var(--ease-out) both; }
+.anim-in-left { animation: screen-in-left 0.32s var(--ease-out) both; }
+.anim-out-right { animation: screen-out-right 0.32s var(--ease-out) both; }
+
+@keyframes screen-in-right {
+  from { transform: translateX(100%); }
+  to { transform: none; }
+}
+
+@keyframes screen-out-left {
+  from { transform: none; opacity: 1; }
+  to { transform: translateX(-30%); opacity: 0.4; }
+}
+
+@keyframes screen-in-left {
+  from { transform: translateX(-30%); opacity: 0.4; }
+  to { transform: none; opacity: 1; }
+}
+
+@keyframes screen-out-right {
+  from { transform: none; }
+  to { transform: translateX(100%); }
+}
+
+/* ---- Settings tabs: panels share one grid cell so they truly cross-fade ---- */
+.settings-tabs {
+  margin: 4px 0 8px;
+}
+
+.settings-tabs .segmented-btn {
+  padding: 10px 2px;
+  font-size: 0.78rem;
+}
+
+.settings-panels {
+  display: grid;
+}
+
+.settings-panel {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.25s ease, visibility 0s linear 0.25s;
+}
+
+.settings-panel.is-active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 0.25s ease, visibility 0s;
+}
+
+.settings-subsection {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+
+/* ---- Skeleton list (cold start) ---- */
+/* Invisible for the first 150ms, so it only ever shows if loading is
+   actually slow; JS removes it the moment real data renders. */
+.skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  opacity: 0;
+  animation: skeleton-reveal 0s linear 0.15s forwards;
+}
+
+@keyframes skeleton-reveal {
+  to { opacity: 1; }
+}
+
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: 14px 16px;
+}
+
+.skeleton-circle,
+.skeleton-line {
+  background: linear-gradient(90deg, #efe9de 25%, #f8f4ec 50%, #efe9de 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s linear infinite;
+}
+
+.skeleton-circle {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+}
+
+.skeleton-lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skeleton-line {
+  height: 12px;
+  width: 60%;
+  border-radius: 6px;
+}
+
+.skeleton-line--short {
+  width: 35%;
+}
+
+@keyframes skeleton-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* ---- Respect the system "reduce motion" setting ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+  }
+}
+
+/* ---- Add / edit screens ---- */
+.btn-add-block {
+  width: 100%;
+  margin-bottom: 24px;
+}
+
+.fullscreen-card .add-form {
+  margin-bottom: 0;
+}
+
+.fullscreen-card .add-form .btn-add {
+  flex: 1 1 100%;
+}
+
+.fullscreen-card .edit-actions button {
+  padding: 12px 18px;
+  font-size: 0.95rem;
 }
