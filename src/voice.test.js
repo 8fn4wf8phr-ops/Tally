@@ -29,6 +29,24 @@ test('"every <period>" implies daily with a vague default hour', () => {
   });
 });
 
+test('a bare hour with no am/pm is a vague guess, not a blank time', () => {
+  const result = parseVoiceInput('Take vitamins at 8');
+  assert.deepEqual(result, {
+    name: 'Take vitamins',
+    time: { hour: 8, minute: 0, matchedText: '8', vague: true },
+    recurrence: { type: 'once', matchedText: [] },
+  });
+});
+
+test('a bare hour:minute with no am/pm is a vague guess', () => {
+  const result = parseVoiceInput('Meeting at 8:30');
+  assert.deepEqual(result, {
+    name: 'Meeting',
+    time: { hour: 8, minute: 30, matchedText: '8:30', vague: true },
+    recurrence: { type: 'once', matchedText: [] },
+  });
+});
+
 test('"in the <period>" is vague but does not imply daily', () => {
   const result = parseVoiceInput('Take a break in the afternoon');
   assert.deepEqual(result, {

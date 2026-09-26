@@ -16,6 +16,16 @@ export function extractExplicitTime(text) {
   }
   if (/\bnoon\b/i.test(text)) return { hour: 12, minute: 0, matchedText: 'noon' };
   if (/\bmidnight\b/i.test(text)) return { hour: 0, minute: 0, matchedText: 'midnight' };
+  // A bare "at <hour>[:<minute>]" with no am/pm said at all — very common in
+  // natural speech ("take vitamins at 8", "meeting at 8:30"). We can't tell
+  // which half of the day is meant, so the hour is taken as-is and marked
+  // vague, same as a period phrase — better than leaving the time silently
+  // blank with no indication anything was missed.
+  match = text.match(/\bat\s+(\d{1,2}(:\d{2})?)\b/i);
+  if (match) {
+    const [hourStr, minuteStr] = match[1].split(':');
+    return { hour: parseInt(hourStr) % 24, minute: minuteStr ? parseInt(minuteStr) : 0, matchedText: match[1], vague: true };
+  }
   return null;
 }
 

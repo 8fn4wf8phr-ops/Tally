@@ -1110,7 +1110,19 @@ function closeVoiceOverlay() {
 function applyParsedVoiceInput(parsed) {
   nameInput.value = parsed.name;
   timeInput.value = parsed.time ? `${pad2(parsed.time.hour)}:${pad2(parsed.time.minute)}` : '';
-  voiceTimeHint.hidden = !parsed.time?.vague;
+  // Show a hint whenever the time isn't a confident explicit match — a vague
+  // guess (no am/pm said) needs confirming, and no match at all needs a
+  // heads-up too, since an empty time field alone looks identical to "voice
+  // input didn't do anything" rather than "no time was understood."
+  if (!parsed.time) {
+    voiceTimeHint.textContent = 'No time understood — please set one';
+    voiceTimeHint.hidden = false;
+  } else if (parsed.time.vague) {
+    voiceTimeHint.textContent = 'Please confirm this guessed time';
+    voiceTimeHint.hidden = false;
+  } else {
+    voiceTimeHint.hidden = true;
+  }
   const recurrence = parsed.recurrence;
   // The parser deliberately never guesses a date for 'once' (see voice.js) —
   // default it to today so the review form isn't stuck with an empty
@@ -1135,10 +1147,14 @@ async function stopVoiceSession() {
 }
 
 async function finishVoiceInput() {
-  await stopVoiceSession();
-  closeVoiceOverlay();
+  // Captured before stopping: stopping cancels the native recognition task,
+  // which can trigger one more (empty/error) transcript callback — reading
+  // latestTranscript only after that await would risk it already having
+  // been overwritten by that trailing event.
   const transcript = latestTranscript.trim();
   latestTranscript = '';
+  await stopVoiceSession();
+  closeVoiceOverlay();
   if (transcript) {
     applyParsedVoiceInput(parseVoiceInput(transcript));
   }
