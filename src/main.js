@@ -5,13 +5,16 @@ import { markReminderTaken, checkStaleStreaks, isOnGrace, isStreakEligible, toda
 import { parseVoiceInput } from './voice.js';
 import { isVoiceAvailable, ensureVoicePermissions, startListening } from './voiceInput.js';
 import { getContextualGreeting, getEmptyStateMessage, isStreakMilestone, getMilestoneMessage, isStreakAcknowledgment, getStreakAcknowledgment, getStreakResetMessage, getNotificationBody } from './personalization.js';
-import { getPendingToday, countOverdue, isExpiredOneTime } from './due.js';
+import { getPendingToday, countOverdue, isExpiredOneTime, isAllDoneToday } from './due.js';
 import {
   ringProgress,
   ringDashOffset,
+  staggerDelay,
   SWIPE_ACTION_WIDTH,
   clampSwipe,
   resolveSwipeSnap,
+  clampCompleteSwipe,
+  shouldCompleteOnRelease,
   isConfettiMilestone,
 } from './motion.js';
 import {
@@ -50,6 +53,8 @@ let greetingStyle = DEFAULT_GREETING_STYLE;
 let reminderDefaults = { ...DEFAULT_REMINDER_DEFAULTS };
 let quietHours = { ...DEFAULT_QUIET_HOURS };
 let justTakenId = null; // only this row plays the checkmark draw-in
+let justIncrementedStreakId = null; // only this row's streak ring plays the pop
+let wasAllDoneToday = false; // tracks the *transition* into all-done, not just the state
 let openSwipeId = null; // the row currently swiped open, if any
 let activeSettingsTab = 'personal';
 const ringProgressById = new Map(); // last-rendered ring fill, so changes can animate
@@ -95,6 +100,8 @@ const toastMessageEl = document.getElementById('toastMessage');
 const appEl = document.getElementById('app');
 const skeletonEl = document.getElementById('skeletonList');
 const confettiEl = document.getElementById('confetti');
+const allDoneBannerEl = document.getElementById('allDoneBanner');
+const allDoneConfettiEl = document.getElementById('allDoneConfetti');
 const settingsTabsEl = document.getElementById('settingsTabs');
 const openAddBtn = document.getElementById('openAddBtn');
 const addScreen = document.getElementById('addScreen');
@@ -229,10 +236,11 @@ function popScreen(leaving, returning) {
 const CONFETTI_COLORS = ['#ffffff', '#ffe08a', '#ffb3c1', '#c7f0ff', '#d9ccff'];
 
 // Particles are generated here, but the motion itself is pure CSS keyframes.
-function burstConfetti() {
-  confettiEl.innerHTML = '';
+// `count` lets the "all done for today" moment fire a fuller burst than an
+// individual milestone without needing a second implementation.
+function burstConfetti(target = confettiEl, count = 24) {
+  target.innerHTML = '';
   if (prefersReducedMotion()) return;
-  const count = 24;
   for (let i = 0; i < count; i++) {
     const angle = (i / count) * Math.PI * 2 + Math.random() * 0.4;
     const distance = 90 + Math.random() * 80;
@@ -242,7 +250,7 @@ function burstConfetti() {
     piece.style.setProperty('--rot', `${Math.round(Math.random() * 540 - 270)}deg`);
     piece.style.setProperty('--delay', `${Math.round(Math.random() * 120)}ms`);
     piece.style.setProperty('--c', CONFETTI_COLORS[i % CONFETTI_COLORS.length]);
-    confettiEl.appendChild(piece);
+    target.appendChild(piece);
   }
 }
 
@@ -657,7 +665,10 @@ async function scheduleNotification(reminder) {
   // A scheduled notification can only carry a fixed number, so it says 1
   // ("something is due"); the app replaces it with the true count of overdue
   // reminders whenever it's opened or backgrounded.
-  const deliveryFields = { ...soundField, badge: 1 };
+  // reminderId rides along so a tapped notification can find its row again
+  // (see localNotificationActionPerformed below) — the notification's own
+  // `id` isn't always the reminder's id (daysOfWeek uses derived sub-ids).
+  const deliveryFields = { ...soundField, badge: 1, extra: { reminderId: reminder.id } };
   let notifications;
 
   if (recurrence.type === 'daysOfWeek') {
@@ -738,6 +749,46 @@ LocalNotifications.addListener('localNotificationReceived', () => updateBadge())
   // Not running in the native shell (plain browser preview).
 });
 
+const NOTIF_HIGHLIGHT_MS = 1800; // matches --dur-highlight in style.css
+
+// On a cold start the tap can fire before init() has finished loading
+// reminders and building rows — poll for the row rather than giving up the
+// instant it isn't there yet.
+function waitForRow(reminderId, { timeout = 6000, interval = 120 } = {}) {
+  return new Promise(resolve => {
+    const find = () => listEl.querySelector(`.swipe-row[data-reminder-id="${reminderId}"]`);
+    const started = Date.now();
+    const tick = () => {
+      const row = find();
+      if (row) { resolve(row); return; }
+      if (Date.now() - started >= timeout) { resolve(null); return; }
+      setTimeout(tick, interval);
+    };
+    tick();
+  });
+}
+
+async function highlightFromNotification(reminderId) {
+  const row = await waitForRow(reminderId);
+  if (!row) return; // reminder was deleted, or never rendered within the timeout
+  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const target = row.querySelector('.reminder-item');
+  target.classList.remove('notif-highlight');
+  void target.offsetWidth; // restart the animation if a previous tap is still fading
+  target.classList.add('notif-highlight');
+  setTimeout(() => target.classList.remove('notif-highlight'), NOTIF_HIGHLIGHT_MS);
+}
+
+// Tapping a delivered notification opens the app (default Capacitor
+// behavior) — this is what scrolls to and highlights the specific reminder
+// it was for, found via the reminderId set in scheduleNotification's extra.
+LocalNotifications.addListener('localNotificationActionPerformed', (action) => {
+  const reminderId = action?.notification?.extra?.reminderId;
+  if (reminderId != null) highlightFromNotification(reminderId);
+}).catch(() => {
+  // Not running in the native shell (plain browser preview).
+});
+
 enableNotifsBtn.addEventListener('click', async () => {
   try {
     const result = await LocalNotifications.requestPermissions();
@@ -769,7 +820,7 @@ async function addReminder(name, time, recurrence, color) {
   await saveReminders();
   await saveNextId();
   await scheduleNotification(reminder);
-  render();
+  render({ animateEntrance: true });
 }
 
 async function toggleTaken(id) {
@@ -785,7 +836,8 @@ async function toggleTaken(id) {
     reminder.takenDate = today;
     reminders[idx] = markReminderTaken(reminder, today, graceOccurrencesForHours(reminderDefaults.gracePeriodHours));
     const newStreak = reminders[idx].currentStreak;
-    if (newStreak !== previousStreak) {
+    if (newStreak > previousStreak) {
+      justIncrementedStreakId = id; // real increment this session — the ring pops
       if (isStreakMilestone(newStreak)) {
         showMilestoneModal(newStreak);
       } else if (isStreakAcknowledgment(newStreak)) {
@@ -796,6 +848,7 @@ async function toggleTaken(id) {
   await saveReminders();
   render();
   justTakenId = null;
+  justIncrementedStreakId = null;
 }
 
 async function deleteReminder(id) {
@@ -804,7 +857,7 @@ async function deleteReminder(id) {
   reminders = reminders.filter(r => r.id !== id);
   await saveReminders();
   if (reminder) await cancelNotification(reminder);
-  render();
+  render({ animateEntrance: true });
 }
 
 async function updateReminder(id, name, time, recurrence, color) {
@@ -833,16 +886,20 @@ function closeOpenSwipe() {
   row.querySelector('.reminder-item').style.transform = '';
 }
 
-// Horizontal drag on a row: follows the finger, then snaps open or closed
-// depending on how far it was pulled (see resolveSwipeSnap). Vertical drags
-// are left alone so the list still scrolls.
-function wireSwipe(row, item, id) {
+// Horizontal drag on a row: follows the finger, then snaps open/closed
+// (leftward, delete — see resolveSwipeSnap) or commits/springs-back
+// (rightward, complete — see shouldCompleteOnRelease). Vertical drags are
+// left alone so the list still scrolls. `taken` disables the rightward
+// gesture — completing an already-completed reminder isn't a thing swipe
+// should do (tap-to-undo still works).
+function wireSwipe(row, item, id, taken) {
   let tracking = false;
   let dragging = false;
   let startX = 0;
   let startY = 0;
   let startOffset = 0;
   let lastOffset = 0;
+  let rowWidth = 0;
   let suppressClick = false;
 
   item.addEventListener('pointerdown', (e) => {
@@ -854,6 +911,7 @@ function wireSwipe(row, item, id) {
     startY = e.clientY;
     startOffset = openSwipeId === id ? -SWIPE_ACTION_WIDTH : 0;
     lastOffset = startOffset;
+    rowWidth = row.getBoundingClientRect().width;
   });
 
   item.addEventListener('pointermove', (e) => {
@@ -870,7 +928,8 @@ function wireSwipe(row, item, id) {
       row.classList.add('is-dragging', 'is-swiping');
       item.setPointerCapture(e.pointerId);
     }
-    lastOffset = clampSwipe(startOffset + dx);
+    const target = startOffset + dx;
+    lastOffset = target <= 0 ? clampSwipe(target) : (taken ? 0 : clampCompleteSwipe(target, rowWidth));
     item.style.transform = `translateX(${lastOffset}px)`;
   });
 
@@ -882,6 +941,17 @@ function wireSwipe(row, item, id) {
     suppressClick = true;
     setTimeout(() => { suppressClick = false; }, 50);
     row.classList.remove('is-dragging');
+
+    if (lastOffset > 0) {
+      if (shouldCompleteOnRelease(lastOffset, rowWidth)) {
+        commitComplete(row, item, id, rowWidth);
+      } else {
+        row.classList.remove('is-swiping');
+        item.style.transform = '';
+      }
+      return;
+    }
+
     if (resolveSwipeSnap(lastOffset) === 'open') {
       openSwipeId = id;
       row.classList.add('is-open', 'is-swiping');
@@ -907,6 +977,20 @@ function wireSwipe(row, item, id) {
       closeOpenSwipe();
     }
   }, true);
+}
+
+// Past the threshold: finish sliding the content clear and fade it so the
+// teal fill reads as "done", then actually mark it taken once that's
+// visually settled — same pin-then-commit shape as removeWithAnimation.
+function commitComplete(row, item, id, rowWidth) {
+  row.classList.add('is-committing');
+  item.style.transform = `translateX(${rowWidth}px)`;
+  item.style.opacity = '0';
+  setTimeout(() => toggleTaken(id), 280);
+}
+
+function completeSvg() {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 }
 
 document.addEventListener('pointerdown', (e) => {
@@ -936,13 +1020,38 @@ function checkSvg(animate) {
   return `<svg class="check-svg${animate ? ' check-svg--draw' : ''}" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" pathLength="1"/></svg>`;
 }
 
+// Only the moment it *becomes* fully done plays the entrance + bigger
+// confetti burst; staying done across unrelated re-renders does nothing,
+// and it reverts cleanly (new reminder added, one unmarked/edited back) the
+// instant that's no longer true.
+function updateAllDoneBanner() {
+  const allDoneNow = isAllDoneToday(reminders);
+  if (allDoneNow) {
+    allDoneBannerEl.hidden = false;
+    if (!wasAllDoneToday) {
+      playAnimation(allDoneBannerEl, 'all-done-enter');
+      burstConfetti(allDoneConfettiEl, 40); // fuller than an individual milestone's 24
+    }
+  } else {
+    allDoneBannerEl.hidden = true;
+    allDoneConfettiEl.innerHTML = '';
+  }
+  wasAllDoneToday = allDoneNow;
+}
+
 // ---- Rendering ----
-function render() {
+// animateEntrance: true only for renders where the list's actual *contents*
+// just changed (initial load, add, delete) — every other render (toggling,
+// editing, settings, theme, badge resync) rebuilds the DOM the same way but
+// skips the stagger, so it doesn't replay just because something unrelated
+// updated.
+function render({ animateEntrance = false } = {}) {
   skeletonEl.remove(); // real data is here; no-op after the first render
   listEl.innerHTML = '';
   const today = todayKey();
   renderGreeting();
   updateBadge();
+  updateAllDoneBanner();
 
   if (reminders.length === 0) {
     emptyStateEl.querySelector('#emptyStateMessage').textContent = getEmptyStateMessage(userName);
@@ -953,7 +1062,7 @@ function render() {
 
   const sorted = [...reminders].sort((a, b) => a.time.localeCompare(b.time));
 
-  sorted.forEach(reminder => {
+  sorted.forEach((reminder, index) => {
     const taken = reminder.takenDate === today;
     const item = document.createElement('div');
     let node = item;
@@ -969,8 +1078,9 @@ function render() {
       ringProgressById.set(reminder.id, progress);
       if (reminder.currentStreak > 0) {
         ringTargetOffset = ringDashOffset(progress, RING_CIRCUMFERENCE);
+        const popping = justIncrementedStreakId === reminder.id;
         streakRing = `
-          <span class="streak-ring${onGrace ? ' streak-ring--grace' : ''}" title="Longest streak: ${reminder.longestStreak} day${reminder.longestStreak === 1 ? '' : 's'}">
+          <span class="streak-ring${onGrace ? ' streak-ring--grace' : ''}${popping ? ' is-popping' : ''}" title="Longest streak: ${reminder.longestStreak} day${reminder.longestStreak === 1 ? '' : 's'}">
             <svg viewBox="0 0 38 38" aria-hidden="true">
               <circle class="ring-track" cx="19" cy="19" r="${RING_RADIUS}"/>
               <circle class="ring-fill" cx="19" cy="19" r="${RING_RADIUS}" stroke-dasharray="${RING_CIRCUMFERENCE}" style="stroke-dashoffset:${ringDashOffset(previous, RING_CIRCUMFERENCE)}"/>
@@ -995,18 +1105,25 @@ function render() {
     item.querySelector('.check-btn').addEventListener('click', () => toggleTaken(reminder.id));
     item.querySelector('.reminder-info').addEventListener('click', () => openEdit(reminder.id));
 
-    // Wrap in a swipe row: the delete action sits behind the item and is
-    // revealed as the item slides left.
+    // Wrap in a swipe row: delete sits behind it on the right (revealed
+    // sliding left), complete sits behind it on the left (revealed sliding
+    // right, not shown at all once already taken).
     const row = document.createElement('div');
     row.className = 'swipe-row' + (openSwipeId === reminder.id ? ' is-open is-swiping' : '');
-    row.innerHTML = '<button type="button" class="swipe-action" aria-label="Delete reminder">Delete</button>';
+    row.dataset.reminderId = reminder.id;
+    row.innerHTML = (taken ? '' : `<div class="swipe-complete" aria-hidden="true">${completeSvg()}</div>`)
+      + '<button type="button" class="swipe-action" aria-label="Delete reminder">Delete</button>';
     row.appendChild(item);
     if (openSwipeId === reminder.id) item.style.transform = `translateX(-${SWIPE_ACTION_WIDTH}px)`;
-    wireSwipe(row, item, reminder.id);
+    wireSwipe(row, item, reminder.id, taken);
     row.querySelector('.swipe-action').addEventListener('click', () => removeWithAnimation(row, reminder.id));
     item.querySelector('.delete-btn').addEventListener('click', () => removeWithAnimation(row, reminder.id));
     node = row;
 
+    if (animateEntrance) {
+      node.classList.add('row-enter');
+      node.style.animationDelay = `${staggerDelay(index)}ms`;
+    }
     listEl.appendChild(node);
     if (ringTargetOffset !== null) {
       const fill = item.querySelector('.ring-fill');
@@ -1221,7 +1338,7 @@ async function init() {
   // the app was closed — this is meant to be a gentle nudge, not a list.
   const anyStreakReset = reminders.some(r => previousStreaks.get(r.id) > 0 && r.currentStreak === 0);
   await saveReminders();
-  render();
+  render({ animateEntrance: true });
   if (anyStreakReset) {
     showToast(getStreakResetMessage(userName));
   }

@@ -54,3 +54,13 @@ export function getPendingToday(reminders, date = new Date()) {
 export function countOverdue(reminders, date = new Date()) {
   return reminders.filter(r => isOverdue(r, date)).length;
 }
+
+// True only when there was at least one reminder relevant to today and every
+// one of them has been taken — an empty list, or a list where nothing
+// applies today, is not "all done", it's just nothing to do.
+export function isAllDoneToday(reminders, date = new Date()) {
+  const relevantToday = reminders.filter(r => appliesToday(r, date));
+  if (relevantToday.length === 0) return false;
+  const todayStr = todayKey(date);
+  return relevantToday.every(r => r.takenDate === todayStr);
+}

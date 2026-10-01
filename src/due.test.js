@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { appliesToday, isPendingToday, isOverdue, isExpiredOneTime, getPendingToday, countOverdue } from './due.js';
+import { appliesToday, isPendingToday, isOverdue, isExpiredOneTime, getPendingToday, countOverdue, isAllDoneToday } from './due.js';
 import { todayKey } from './streak.js';
 
 // 2024-01-10 is a Wednesday.
@@ -87,6 +87,32 @@ test('isExpiredOneTime is false for recurring reminders', () => {
   assert.equal(isExpiredOneTime(makeReminder(), at(23)), false);
   assert.equal(isExpiredOneTime(makeReminder({ recurrence: { type: 'monthlyDate', dayOfMonth: 1 } }), at(23)), false);
   assert.equal(isExpiredOneTime(makeReminder({ recurrence: undefined }), at(23)), false);
+});
+
+test('isAllDoneToday is false for an empty list', () => {
+  assert.equal(isAllDoneToday([], at(10)), false);
+});
+
+test('isAllDoneToday is false when nothing in the list applies today', () => {
+  const tuesOnly = makeReminder({ recurrence: { type: 'daysOfWeek', daysOfWeek: [2] } }); // today is Wed
+  assert.equal(isAllDoneToday([tuesOnly], at(10)), false);
+});
+
+test('isAllDoneToday is false while anything relevant to today is still pending', () => {
+  const reminders = [
+    makeReminder({ id: 1, takenDate: todayKey(at(10)) }),
+    makeReminder({ id: 2, takenDate: null }),
+  ];
+  assert.equal(isAllDoneToday(reminders, at(10)), false);
+});
+
+test('isAllDoneToday is true once every reminder relevant to today is taken', () => {
+  const today = todayKey(at(10));
+  const reminders = [
+    makeReminder({ id: 1, takenDate: today }),
+    makeReminder({ id: 2, takenDate: today, recurrence: { type: 'daysOfWeek', daysOfWeek: [2] } }), // not today, irrelevant
+  ];
+  assert.equal(isAllDoneToday(reminders, at(10)), true);
 });
 
 test('countOverdue counts only pending reminders whose time has passed', () => {

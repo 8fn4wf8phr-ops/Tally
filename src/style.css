@@ -22,6 +22,13 @@
      property itself isn't reliable. `scale` carries the press feedback. */
   --transition-ui: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease, scale 0.12s ease, opacity 0.2s ease;
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Named durations so the overall feel can be tuned from one place. */
+  --dur-swipe: 0.28s;
+  --dur-swipe-commit: 0.22s;
+  --dur-pop: 0.36s;
+  --dur-stagger-item: 0.25s; /* per-row delay/step itself lives in motion.js (LIST_STAGGER_STEP_MS) */
+  --dur-highlight: 1800ms;
 }
 
 html, body {
@@ -366,6 +373,18 @@ body {
   border-left-color: var(--rc);
 }
 
+/* ---- Notification tap highlight ---- */
+/* A glow ring, not background-color — stays correct over a taken or
+   custom-colored card without fighting either rule for that property. */
+@keyframes notif-pulse {
+  0% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent-color) 45%, transparent); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.reminder-item.notif-highlight {
+  animation: notif-pulse var(--dur-highlight) ease-out;
+}
+
 .reminder-item.taken .check-btn {
   background: var(--rc);
   border-color: var(--rc);
@@ -413,6 +432,19 @@ body {
 
 .streak-ring--grace {
   opacity: 0.5;
+}
+
+/* Only an actual increment during this session plays this — the ring's own
+   fill (.ring-fill, below) already animates on every render regardless, so
+   this is a distinct, separate "that counted" beat layered on top of it. */
+.streak-ring.is-popping {
+  animation: streak-pop var(--dur-pop) var(--ease-out);
+}
+
+@keyframes streak-pop {
+  0% { scale: 1; }
+  35% { scale: 1.3; }
+  100% { scale: 1; }
 }
 
 .streak-ring svg {
@@ -901,6 +933,18 @@ select,
   100% { scale: 1; }
 }
 
+/* ---- Staggered list entrance ---- */
+/* Lives on the outer row, not .reminder-item — that element's own transform
+   is driven directly by the swipe gesture, so this stays out of its way. */
+@keyframes row-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.swipe-row.row-enter {
+  animation: row-enter var(--dur-stagger-item) var(--ease-out) backwards;
+}
+
 /* ---- Swipe-to-delete ---- */
 .swipe-row {
   position: relative;
@@ -933,11 +977,38 @@ select,
 .swipe-row > .reminder-item {
   position: relative;
   touch-action: pan-y; /* vertical scroll stays native; horizontal drags are ours */
-  transition: var(--transition-ui), transform 0.28s var(--ease-out);
+  transition: var(--transition-ui), transform var(--dur-swipe) var(--ease-out);
 }
 
 .swipe-row.is-dragging > .reminder-item {
   transition: var(--transition-ui), transform 0s;
+}
+
+/* ---- Swipe-to-complete (mirrors swipe-to-delete, rightward) ---- */
+/* Purely visual — non-interactive, revealed only by the content sliding off
+   it, same mechanism as .swipe-action but with no fixed width of its own. */
+.swipe-complete {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 24px;
+  border-radius: 16px;
+  background: var(--accent-color);
+  color: #fff;
+  pointer-events: none;
+}
+
+.swipe-complete svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* Committing past the threshold: content finishes sliding clear and fades,
+   fully revealing the teal underneath, before the real "mark taken" swap. */
+.swipe-row.is-committing > .reminder-item {
+  transition: opacity var(--dur-swipe-commit) ease, transform var(--dur-swipe-commit) var(--ease-out);
+  pointer-events: none;
 }
 
 /* Collapse-and-fade on delete. JS pins the height first so it can animate. */
@@ -949,8 +1020,47 @@ select,
   transition: height 0.3s var(--ease-out), margin-top 0.3s var(--ease-out), opacity 0.22s ease;
 }
 
-/* ---- Confetti (30 / 100 / 365-day milestones only) ---- */
-.milestone-modal-card {
+/* ---- "All done for today" banner ---- */
+@keyframes all-done-enter {
+  from { opacity: 0; scale: 0.9; }
+  to { opacity: 1; scale: 1; }
+}
+
+.all-done-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 16px;
+  margin-bottom: 16px;
+  text-align: center;
+  color: var(--accent-color-dark);
+}
+
+/* Author-origin `display: flex` above always beats the UA [hidden] rule
+   regardless of the hidden attribute — same cascade gotcha this codebase
+   already hit once for .permission-banner. */
+.all-done-banner[hidden] {
+  display: none;
+}
+
+.all-done-banner.all-done-enter {
+  animation: all-done-enter var(--dur-pop) var(--ease-out);
+}
+
+.all-done-check {
+  width: 34px;
+  height: 34px;
+}
+
+.all-done-banner p {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/* ---- Confetti (30 / 100 / 365-day milestones, and "all done for today") ---- */
+.milestone-modal-card,
+.all-done-banner {
   position: relative;
 }
 

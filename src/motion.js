@@ -17,6 +17,16 @@ export function ringDashOffset(progress, circumference) {
   return circumference * (1 - Math.min(Math.max(progress, 0), 1));
 }
 
+// ---- Staggered list entrance ----
+export const LIST_STAGGER_STEP_MS = 45;
+export const LIST_STAGGER_MAX_DELAY_MS = 350;
+
+// Later rows wait a little longer, capped so a long list doesn't make row 20
+// wait nearly a second.
+export function staggerDelay(index, step = LIST_STAGGER_STEP_MS, max = LIST_STAGGER_MAX_DELAY_MS) {
+  return Math.min(Math.max(index, 0) * step, max);
+}
+
 // ---- Swipe-to-delete ----
 export const SWIPE_ACTION_WIDTH = 84;
 const SWIPE_OVERSHOOT = 24;
@@ -30,6 +40,28 @@ export function clampSwipe(offset, actionWidth = SWIPE_ACTION_WIDTH) {
 // On release, snap open once the row has been pulled past halfway.
 export function resolveSwipeSnap(offset, actionWidth = SWIPE_ACTION_WIDTH) {
   return offset < -actionWidth / 2 ? 'open' : 'closed';
+}
+
+// ---- Swipe-to-complete ----
+// Mirrors swipe-to-delete but rightward and unbounded by a fixed action
+// width — the reveal is a fraction of the row's own width, not a fixed icon.
+export const SWIPE_COMPLETE_THRESHOLD = 0.4;
+
+// Rightward offsets are >= 0, capped at the row's own width (can't drag the
+// content further than fully off to the side).
+export function clampCompleteSwipe(offset, rowWidth) {
+  if (!rowWidth || rowWidth <= 0) return 0;
+  return Math.min(Math.max(offset, 0), rowWidth);
+}
+
+export function completeProgress(offset, rowWidth) {
+  if (!rowWidth || rowWidth <= 0) return 0;
+  return Math.min(Math.max(offset / rowWidth, 0), 1);
+}
+
+// Past 40% of the row's width, releasing commits to completing it.
+export function shouldCompleteOnRelease(offset, rowWidth, threshold = SWIPE_COMPLETE_THRESHOLD) {
+  return completeProgress(offset, rowWidth) >= threshold;
 }
 
 // ---- Confetti ----
