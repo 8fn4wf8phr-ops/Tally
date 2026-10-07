@@ -6,14 +6,15 @@
 }
 
 :root {
-  --color-bg: #fbf7f1;
+  --color-bg: #fff3dc;
   --color-card: #ffffff;
-  --color-text: #1c2420;
-  --color-muted: #7c8781;
-  --accent-color: #00d4c4;
-  --accent-color-dark: #00a89a;
-  --accent-color-light: #d7f7f3;
-  --color-border: #e7e1d6;
+  --color-text: #0a2e33;
+  --color-muted: #4a6469;
+  --accent-color: #0a4750;
+  --accent-color-dark: #062f35;
+  --accent-color-light: #dfe9df;
+  --color-apricot: #f2a66e;
+  --color-border: #e6d6b0;
   --color-danger: #d6455a;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -74,7 +75,7 @@ body {
   margin-left: 6px;
   margin-bottom: 4px;
   border-radius: 50%;
-  background: var(--accent-color);
+  background: var(--color-apricot);
 }
 
 .greeting {
@@ -291,13 +292,11 @@ body {
   font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 6px 16px -4px color-mix(in srgb, var(--accent-color) 50%, transparent);
   transition: var(--transition-ui);
 }
 
 .btn-add:active {
   background: var(--accent-color-dark);
-  box-shadow: 0 3px 10px -4px color-mix(in srgb, var(--accent-color) 50%, transparent);
 }
 
 /* ---- Empty state ---- */
@@ -330,7 +329,6 @@ body {
   border: 1px solid var(--color-border);
   border-radius: 16px;
   padding: 14px 16px;
-  box-shadow: 0 2px 8px -4px rgba(28, 36, 32, 0.08);
   transition: var(--transition-ui);
 }
 
@@ -344,7 +342,7 @@ body {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  border: 2px solid var(--color-border);
+  border: 2px solid var(--accent-color);
   background: #fff;
   color: #fff;
   font-size: 1rem;

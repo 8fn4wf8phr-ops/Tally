@@ -18,13 +18,12 @@ export function normalizeGreetingStyle(value) {
 }
 
 // ---- Accent theme ----
-// "Teal" is #00d4c4 — this is now the app's one formally-named default
-// accent, replacing the old ad-hoc #0ea383 that was never actually named
-// anywhere in the UI.
+// "Teal" (id kept for stored preferences) is the brand's Deep Teal #0a4750 —
+// the app's one formally-named default accent. White text on it is 10.3:1.
 export const ACCENT_THEMES = {
-  teal: { label: 'Teal', accent: '#00d4c4', accentDark: '#00a89a', accentLight: '#d7f7f3' },
+  teal: { label: 'Deep teal', accent: '#0a4750', accentDark: '#062f35', accentLight: '#dfe9df' },
   coral: { label: 'Coral', accent: '#ff6b6b', accentDark: '#e14b4b', accentLight: '#ffe1e1' },
-  violet: { label: 'Violet', accent: '#9b7fd4', accentDark: '#7c5fc0', accentLight: '#ece4f9' },
+  violet: { label: 'Violet', accent: '#6b3ded', accentDark: '#5430c7', accentLight: '#e6defc' },
   sky: { label: 'Sky', accent: '#4ea8de', accentDark: '#2f86c0', accentLight: '#dcf0fb' },
   indigo: { label: 'Indigo', accent: '#6c7ce0', accentDark: '#4f5fc4', accentLight: '#e3e6fa' },
   mint: { label: 'Mint', accent: '#5fd9b0', accentDark: '#34b98c', accentLight: '#daf7ed' },
@@ -49,10 +48,10 @@ export const DEFAULT_REMINDER_DEFAULTS = {
 
 // ---- Per-reminder colors ----
 export const REMINDER_COLORS = [
-  { id: 'teal', hex: '#00d4c4', label: 'Teal' },
+  { id: 'teal', hex: '#0a4750', label: 'Deep teal' },
   { id: 'coral', hex: '#ff6b6b', label: 'Coral' },
   { id: 'amber', hex: '#ffb347', label: 'Amber' },
-  { id: 'violet', hex: '#9b7fd4', label: 'Violet' },
+  { id: 'violet', hex: '#6b3ded', label: 'Violet' },
   { id: 'sky', hex: '#4ea8de', label: 'Sky' },
   { id: 'sage', hex: '#8fbc8f', label: 'Sage' },
   { id: 'rose', hex: '#f78fb3', label: 'Rose' },
