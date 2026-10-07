@@ -55,6 +55,63 @@ export function countOverdue(reminders, date = new Date()) {
   return reminders.filter(r => isOverdue(r, date)).length;
 }
 
+// ---- Home tabs: Today / Upcoming / Done ----
+export const VIEWS = ['today', 'upcoming', 'done'];
+
+function startOfDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function addDays(date, n) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + n);
+}
+
+// The next calendar day (strictly after today) this reminder applies, or
+// null if it never will again (a one-time reminder that's today or earlier).
+export function nextOccurrence(reminder, date = new Date()) {
+  const recurrence = reminder.recurrence || { type: 'daily' };
+  if (recurrence.type === 'once') {
+    const [y, m, d] = recurrence.date.split('-').map(Number);
+    const day = new Date(y, m - 1, d);
+    return day > startOfDay(date) ? day : null;
+  }
+  // A year of lookahead covers every pattern, including "the 31st" and "the 29th".
+  for (let i = 1; i <= 366; i++) {
+    const candidate = addDays(date, i);
+    if (appliesToday(reminder, candidate)) return candidate;
+  }
+  return null;
+}
+
+// Upcoming = doesn't apply today, but will again.
+export function isUpcoming(reminder, date = new Date()) {
+  return !appliesToday(reminder, date) && nextOccurrence(reminder, date) !== null;
+}
+
+export function isDoneToday(reminder, date = new Date()) {
+  return appliesToday(reminder, date) && reminder.takenDate === todayKey(date);
+}
+
+// Reminders for one Home tab. Today = still pending, Done = completed today,
+// Upcoming = not due today, soonest day first.
+export function filterForView(reminders, view, date = new Date()) {
+  if (view === 'upcoming') {
+    return reminders
+      .filter(r => isUpcoming(r, date))
+      .sort((a, b) => (nextOccurrence(a, date) - nextOccurrence(b, date)) || a.time.localeCompare(b.time));
+  }
+  const matches = view === 'done' ? isDoneToday : isPendingToday;
+  return reminders.filter(r => matches(r, date)).sort((a, b) => a.time.localeCompare(b.time));
+}
+
+// "Today" / "Tomorrow" / "Fri, Jan 12".
+export function describeDay(day, today = new Date(), locale) {
+  const diff = Math.round((startOfDay(day) - startOfDay(today)) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  return day.toLocaleDateString(locale, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
 // True only when there was at least one reminder relevant to today and every
 // one of them has been taken — an empty list, or a list where nothing
 // applies today, is not "all done", it's just nothing to do.

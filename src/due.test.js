@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { appliesToday, isPendingToday, isOverdue, isExpiredOneTime, getPendingToday, countOverdue, isAllDoneToday } from './due.js';
+import { appliesToday, isPendingToday, isOverdue, isExpiredOneTime, getPendingToday, countOverdue, isAllDoneToday, nextOccurrence, isUpcoming, isDoneToday, filterForView, describeDay } from './due.js';
 import { todayKey } from './streak.js';
 
 // 2024-01-10 is a Wednesday.
@@ -124,4 +124,65 @@ test('countOverdue counts only pending reminders whose time has passed', () => {
   ];
   assert.equal(countOverdue(reminders, at(10)), 2);
   assert.equal(countOverdue([], at(10)), 0);
+});
+
+const ymd = d => [d.getFullYear(), d.getMonth() + 1, d.getDate()];
+
+test('nextOccurrence: daily is tomorrow', () => {
+  assert.deepEqual(ymd(nextOccurrence(makeReminder(), at(10))), [2024, 1, 11]);
+});
+
+test('nextOccurrence: daysOfWeek finds the next listed weekday, never today', () => {
+  const fri = makeReminder({ recurrence: { type: 'daysOfWeek', daysOfWeek: [5] } });
+  const wed = makeReminder({ recurrence: { type: 'daysOfWeek', daysOfWeek: [3] } }); // today is Wed
+  assert.deepEqual(ymd(nextOccurrence(fri, at(10))), [2024, 1, 12]);
+  assert.deepEqual(ymd(nextOccurrence(wed, at(10))), [2024, 1, 17]);
+});
+
+test('nextOccurrence: monthlyDate rolls to the next month when the day has passed', () => {
+  assert.deepEqual(ymd(nextOccurrence(makeReminder({ recurrence: { type: 'monthlyDate', dayOfMonth: 5 } }), at(10))), [2024, 2, 5]);
+  assert.deepEqual(ymd(nextOccurrence(makeReminder({ recurrence: { type: 'monthlyDate', dayOfMonth: 31 } }), at(10))), [2024, 1, 31]);
+});
+
+test('nextOccurrence: once is its date if still ahead, otherwise null', () => {
+  const once = date => makeReminder({ recurrence: { type: 'once', date } });
+  assert.deepEqual(ymd(nextOccurrence(once('2024-02-01'), at(10))), [2024, 2, 1]);
+  assert.equal(nextOccurrence(once('2024-01-10'), at(10)), null);
+  assert.equal(nextOccurrence(once('2024-01-09'), at(10)), null);
+});
+
+test('isUpcoming is true only for reminders not due today that will recur', () => {
+  assert.equal(isUpcoming(makeReminder({ recurrence: { type: 'daysOfWeek', daysOfWeek: [5] } }), at(10)), true);
+  assert.equal(isUpcoming(makeReminder(), at(10)), false); // daily applies today
+  assert.equal(isUpcoming(makeReminder({ recurrence: { type: 'once', date: '2024-01-20' } }), at(10)), true);
+  assert.equal(isUpcoming(makeReminder({ recurrence: { type: 'once', date: '2024-01-01' } }), at(10)), false);
+});
+
+test('isDoneToday needs the reminder to apply today and be taken today', () => {
+  const today = todayKey(at(10));
+  assert.equal(isDoneToday(makeReminder({ takenDate: today }), at(10)), true);
+  assert.equal(isDoneToday(makeReminder({ takenDate: '2024-01-09' }), at(10)), false);
+  assert.equal(isDoneToday(makeReminder({ takenDate: today, recurrence: { type: 'daysOfWeek', daysOfWeek: [2] } }), at(10)), false);
+});
+
+test('filterForView splits reminders across the three tabs', () => {
+  const today = todayKey(at(10));
+  const reminders = [
+    makeReminder({ id: 1, time: '20:00' }),
+    makeReminder({ id: 2, time: '08:00' }),
+    makeReminder({ id: 3, time: '12:00', takenDate: today }),
+    makeReminder({ id: 4, time: '07:00', recurrence: { type: 'daysOfWeek', daysOfWeek: [6] } }),
+    makeReminder({ id: 5, time: '09:00', recurrence: { type: 'daysOfWeek', daysOfWeek: [5] } }),
+    makeReminder({ id: 6, time: '09:00', recurrence: { type: 'once', date: '2024-01-01' } }), // expired: in no tab
+  ];
+  const ids = view => filterForView(reminders, view, at(10)).map(r => r.id);
+  assert.deepEqual(ids('today'), [2, 1]);
+  assert.deepEqual(ids('done'), [3]);
+  assert.deepEqual(ids('upcoming'), [5, 4]); // Fri Jan 12 before Sat Jan 13
+});
+
+test('describeDay says Today / Tomorrow, then a short date', () => {
+  assert.equal(describeDay(at(23), at(1)), 'Today');
+  assert.equal(describeDay(new Date(2024, 0, 11), at(10)), 'Tomorrow');
+  assert.equal(describeDay(new Date(2024, 0, 12), at(10), 'en-US'), 'Fri, Jan 12');
 });

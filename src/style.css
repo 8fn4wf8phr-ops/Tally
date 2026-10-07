@@ -1233,9 +1233,237 @@ select,
 
 .fullscreen-card .add-form .btn-add {
   flex: 1 1 100%;
+  margin-top: 10px;
 }
 
 .fullscreen-card .edit-actions button {
   padding: 12px 18px;
   font-size: 0.95rem;
+}
+
+/* ---- Home tabs: Today / Upcoming / Done ---- */
+.view-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0 18px;
+}
+
+.view-tab {
+  height: 40px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 20px;
+  background: transparent;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition-ui);
+}
+
+.view-tab.selected {
+  background: var(--accent-color);
+  color: #fff;
+}
+
+.upcoming-icon {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-color);
+}
+
+/* Floating "new reminder" button. Overlays sit at z-index 200, so it
+   naturally hides behind add/edit/detail/settings. */
+.fab {
+  position: fixed;
+  right: 24px;
+  bottom: calc(24px + var(--safe-bottom));
+  width: 62px;
+  height: 62px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent-color);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 100;
+  transition: var(--transition-ui);
+}
+
+.fab:active {
+  background: var(--accent-color-dark);
+  scale: 0.94;
+}
+
+.local-caption {
+  margin-top: 28px;
+  padding-bottom: calc(110px + var(--safe-bottom)); /* clear the floating button */
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--color-muted);
+}
+
+/* ---- Add / edit / detail screen chrome ---- */
+.screen-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.btn-back {
+  width: 40px;
+  height: 40px;
+  margin-left: -8px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--transition-ui);
+}
+
+.btn-back:active {
+  background: var(--accent-color-light);
+}
+
+.field-label {
+  flex: 1 1 100%;
+  margin-top: 6px;
+  margin-bottom: -2px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.notes-input {
+  flex: 1 1 100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 1rem;
+  resize: none;
+}
+
+.notes-input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+
+/* Form-like screens read top-down (the card is vertically centered by default). */
+#addScreen .fullscreen-card,
+#editScreen .fullscreen-card,
+#detailScreen .fullscreen-card {
+  margin-top: 0;
+}
+
+/* ---- Reminder detail ---- */
+.fullscreen-card .detail-title {
+  margin-top: 2px;
+  font-size: 2rem;
+  line-height: 1.1;
+}
+
+.detail-bell {
+  width: 132px;
+  height: 132px;
+  margin: 6px auto 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-apricot) 28%, var(--color-bg));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bell-body {
+  fill: var(--accent-color);
+}
+
+.detail-info {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+}
+
+.detail-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  padding: 0 16px;
+  font-weight: 500;
+}
+
+.detail-row svg {
+  flex: none;
+  color: var(--accent-color);
+}
+
+.detail-row + .detail-row {
+  border-top: 1px solid var(--color-border);
+}
+
+.detail-notes {
+  min-height: 56px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.detail-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.detail-actions [hidden] {
+  display: none;
+}
+
+.btn-outline {
+  border: 2px solid var(--accent-color);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--accent-color);
+  padding: 12px 20px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition-ui);
+}
+
+.btn-outline:active {
+  background: var(--accent-color-light);
+}
+
+.link-btn {
+  align-self: center;
+  padding: 8px;
+  border: none;
+  background: none;
+  color: var(--accent-color);
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  cursor: pointer;
 }

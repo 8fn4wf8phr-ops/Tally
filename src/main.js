@@ -5,7 +5,7 @@ import { markReminderTaken, checkStaleStreaks, isOnGrace, isStreakEligible, toda
 import { parseVoiceInput } from './voice.js';
 import { isVoiceAvailable, ensureVoicePermissions, startListening } from './voiceInput.js';
 import { getContextualGreeting, getEmptyStateMessage, isStreakMilestone, getMilestoneMessage, isStreakAcknowledgment, getStreakAcknowledgment, getStreakResetMessage, getNotificationBody } from './personalization.js';
-import { getPendingToday, countOverdue, isExpiredOneTime, isAllDoneToday } from './due.js';
+import { getPendingToday, countOverdue, isExpiredOneTime, isAllDoneToday, appliesToday, filterForView, nextOccurrence, describeDay } from './due.js';
 import {
   ringProgress,
   ringDashOffset,
@@ -57,6 +57,8 @@ let justIncrementedStreakId = null; // only this row's streak ring plays the pop
 let wasAllDoneToday = false; // tracks the *transition* into all-done, not just the state
 let openSwipeId = null; // the row currently swiped open, if any
 let activeSettingsTab = 'personal';
+let activeView = 'today'; // Home tab: 'today' | 'upcoming' | 'done'
+let detailId = null; // the reminder whose detail screen is open, if any
 const ringProgressById = new Map(); // last-rendered ring fill, so changes can animate
 
 const listEl = document.getElementById('reminderList');
@@ -114,6 +116,20 @@ const editNameInput = document.getElementById('editNameInput');
 const editTimeInput = document.getElementById('editTimeInput');
 const editRecurrenceFieldsEl = document.getElementById('editRecurrenceFields');
 const editColorFieldsEl = document.getElementById('editColorFields');
+const notesInput = document.getElementById('notesInput');
+const editNotesInput = document.getElementById('editNotesInput');
+const viewTabsEl = document.getElementById('viewTabs');
+const emptyStateSubEl = document.getElementById('emptyStateSub');
+const detailScreen = document.getElementById('detailScreen');
+const detailBackBtn = document.getElementById('detailBackBtn');
+const detailTitleEl = document.getElementById('detailTitle');
+const detailWhenEl = document.getElementById('detailWhen');
+const detailRepeatEl = document.getElementById('detailRepeat');
+const detailNotesBlockEl = document.getElementById('detailNotesBlock');
+const detailNotesEl = document.getElementById('detailNotes');
+const detailCompleteBtn = document.getElementById('detailCompleteBtn');
+const detailSnoozeBtn = document.getElementById('detailSnoozeBtn');
+const detailEditBtn = document.getElementById('detailEditBtn');
 
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -330,6 +346,7 @@ async function loadReminders() {
     longestStreak: 0,
     lastCompletedDate: null,
     recurrence: { type: 'daily' },
+    notes: '',
     ...r,
     color: normalizeReminderColor(r.color),
   }));
@@ -605,20 +622,23 @@ settingsTabsEl.addEventListener('click', (e) => {
 // these, so they all share the same slide and can't be triggered mid-slide.
 let screenBusy = false;
 
-async function openScreen(screen, prepare) {
+// `from` is the screen underneath: the home list by default, or the detail
+// screen when Edit is opened from it (so Back returns there, not home).
+async function openScreen(screen, prepare, from = appEl) {
   if (screenBusy) return false;
   screenBusy = true;
   if (prepare) prepare();
-  await pushScreen(screen, appEl);
+  await pushScreen(screen, from);
   screenBusy = false;
   return true;
 }
 
-async function closeScreen(screen) {
-  if (screenBusy) return;
+async function closeScreen(screen, to = appEl) {
+  if (screenBusy) return false;
   screenBusy = true;
-  await popScreen(screen, appEl);
+  await popScreen(screen, to);
   screenBusy = false;
+  return true;
 }
 
 settingsBtn.addEventListener('click', () => openScreen(settingsScreen, () => {
@@ -716,10 +736,50 @@ async function scheduleNotification(reminder) {
 
 async function cancelNotification(reminder) {
   try {
-    const ids = notificationIdsFor(reminder).map(id => ({ id }));
-    if (ids.length) await LocalNotifications.cancel({ notifications: ids });
+    // A pending snooze belongs to the reminder too, so it goes with it.
+    const ids = [...notificationIdsFor(reminder), SNOOZE_ID_BASE + reminder.id].map(id => ({ id }));
+    await LocalNotifications.cancel({ notifications: ids });
   } catch (e) {
     console.error('Could not cancel notification', e);
+  }
+}
+
+// ---- Snooze ----
+// One extra one-time notification, 10 minutes out. Its id sits far above
+// reminder ids and the daysOfWeek sub-ids (id * 100 + weekday), so it never
+// replaces the reminder's real schedule.
+const SNOOZE_MINUTES = 10;
+const SNOOZE_ID_BASE = 1000000000;
+
+async function scheduleSnooze(reminder) {
+  const at = new Date(Date.now() + SNOOZE_MINUTES * 60 * 1000);
+  const soundField = reminderDefaults.soundEnabled && !isWithinQuietHours(at.getHours(), at.getMinutes(), quietHours)
+    ? { sound: 'default' }
+    : {};
+  try {
+    await LocalNotifications.schedule({
+      notifications: [{
+        id: SNOOZE_ID_BASE + reminder.id,
+        title: 'Tally',
+        body: getNotificationBody(reminder.name, userName),
+        schedule: { at, allowWhileIdle: true },
+        ...soundField,
+        badge: 1,
+        extra: { reminderId: reminder.id },
+      }],
+    });
+    return true;
+  } catch (e) {
+    console.error('Could not schedule snooze', e);
+    return false;
+  }
+}
+
+async function cancelSnooze(id) {
+  try {
+    await LocalNotifications.cancel({ notifications: [{ id: SNOOZE_ID_BASE + id }] });
+  } catch (e) {
+    // Not running in the native shell, or nothing was scheduled.
   }
 }
 
@@ -769,6 +829,11 @@ function waitForRow(reminderId, { timeout = 6000, interval = 120 } = {}) {
 }
 
 async function highlightFromNotification(reminderId) {
+  // The row only exists on the tab it belongs to, so go there first.
+  const reminder = reminders.find(r => r.id === reminderId);
+  if (reminder && appliesToday(reminder)) {
+    setView(reminder.takenDate === todayKey() ? 'done' : 'today');
+  }
   const row = await waitForRow(reminderId);
   if (!row) return; // reminder was deleted, or never rendered within the timeout
   row.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -804,13 +869,14 @@ enableNotifsBtn.addEventListener('click', async () => {
 });
 
 // ---- CRUD ----
-async function addReminder(name, time, recurrence, color) {
+async function addReminder(name, time, recurrence, color, notes) {
   const reminder = {
     id: nextId++,
     name,
     time,
     recurrence,
     color,
+    notes,
     takenDate: null,
     currentStreak: 0,
     longestStreak: 0,
@@ -820,7 +886,8 @@ async function addReminder(name, time, recurrence, color) {
   await saveReminders();
   await saveNextId();
   await scheduleNotification(reminder);
-  render({ animateEntrance: true });
+  // Show the tab the new reminder lives on, so it doesn't seem to vanish.
+  setView(appliesToday(reminder) ? 'today' : 'upcoming');
 }
 
 async function toggleTaken(id) {
@@ -833,6 +900,7 @@ async function toggleTaken(id) {
   } else {
     const previousStreak = reminder.currentStreak;
     justTakenId = id;
+    cancelSnooze(id); // done now, so a pending snooze shouldn't ping later
     reminder.takenDate = today;
     reminders[idx] = markReminderTaken(reminder, today, graceOccurrencesForHours(reminderDefaults.gracePeriodHours));
     const newStreak = reminders[idx].currentStreak;
@@ -847,9 +915,15 @@ async function toggleTaken(id) {
   }
   await saveReminders();
   render();
+  const justCompleted = justTakenId !== null;
   justTakenId = null;
   justIncrementedStreakId = null;
+  // On the Today tab the completed row lingers so its animation can play;
+  // once that's had time to finish, a fresh render moves it over to Done.
+  if (justCompleted && activeView === 'today') setTimeout(() => render(), COMPLETE_LINGER_MS);
 }
+
+const COMPLETE_LINGER_MS = 1400;
 
 async function deleteReminder(id) {
   if (openSwipeId === id) openSwipeId = null;
@@ -860,7 +934,7 @@ async function deleteReminder(id) {
   render({ animateEntrance: true });
 }
 
-async function updateReminder(id, name, time, recurrence, color) {
+async function updateReminder(id, name, time, recurrence, color, notes) {
   const reminder = reminders.find(r => r.id === id);
   if (!reminder) return;
   await cancelNotification(reminder); // cancel using the OLD recurrence's notification ids first
@@ -868,6 +942,7 @@ async function updateReminder(id, name, time, recurrence, color) {
   reminder.time = time;
   reminder.recurrence = recurrence;
   reminder.color = color;
+  reminder.notes = notes;
   await saveReminders();
   await scheduleNotification(reminder);
   editingId = null;
@@ -1026,7 +1101,9 @@ function checkSvg(animate) {
 // instant that's no longer true.
 function updateAllDoneBanner() {
   const allDoneNow = isAllDoneToday(reminders);
-  if (allDoneNow) {
+  // The celebration belongs to the Today tab; elsewhere it stays hidden but
+  // the transition is still tracked so switching tabs doesn't replay it.
+  if (allDoneNow && activeView === 'today') {
     allDoneBannerEl.hidden = false;
     if (!wasAllDoneToday) {
       playAnimation(allDoneBannerEl, 'all-done-enter');
@@ -1038,6 +1115,44 @@ function updateAllDoneBanner() {
   }
   wasAllDoneToday = allDoneNow;
 }
+
+// ---- Home tabs ----
+const EMPTY_VIEW_MESSAGES = {
+  today: 'Nothing due today.',
+  upcoming: 'Nothing coming up.',
+  done: 'Nothing completed yet today.',
+};
+
+// What the active tab lists. A reminder checked off on the Today tab stays
+// put for a moment (justTakenId) so its checkmark and streak ring can finish
+// animating instead of vanishing the instant it's done.
+function remindersForView() {
+  const list = filterForView(reminders, activeView);
+  if (activeView === 'today' && justTakenId !== null && !list.some(r => r.id === justTakenId)) {
+    const lingering = reminders.find(r => r.id === justTakenId);
+    if (lingering) {
+      list.push(lingering);
+      list.sort((a, b) => a.time.localeCompare(b.time));
+    }
+  }
+  return list;
+}
+
+function setView(view) {
+  activeView = view;
+  openSwipeId = null;
+  viewTabsEl.querySelectorAll('.view-tab').forEach(btn => {
+    const selected = btn.dataset.view === view;
+    btn.classList.toggle('selected', selected);
+    btn.setAttribute('aria-selected', String(selected));
+  });
+  render({ animateEntrance: true });
+}
+
+viewTabsEl.addEventListener('click', (e) => {
+  const tab = e.target.closest('[data-view]');
+  if (tab && tab.dataset.view !== activeView) setView(tab.dataset.view);
+});
 
 // ---- Rendering ----
 // animateEntrance: true only for renders where the list's actual *contents*
@@ -1053,17 +1168,19 @@ function render({ animateEntrance = false } = {}) {
   updateBadge();
   updateAllDoneBanner();
 
-  if (reminders.length === 0) {
-    emptyStateEl.querySelector('#emptyStateMessage').textContent = getEmptyStateMessage(userName);
-    emptyStateEl.hidden = false;
-    return;
-  }
-  emptyStateEl.hidden = true;
+  const visible = remindersForView();
+  const emptyMessage = reminders.length === 0 ? getEmptyStateMessage(userName) : EMPTY_VIEW_MESSAGES[activeView];
+  // With reminders but nothing due on the Today tab and everything done, the
+  // all-done banner already says it; a second empty message would be noise.
+  const bannerCoversIt = activeView === 'today' && reminders.length > 0 && isAllDoneToday(reminders);
+  const showEmpty = visible.length === 0 && !bannerCoversIt;
+  emptyStateEl.querySelector('#emptyStateMessage').textContent = emptyMessage;
+  emptyStateSubEl.hidden = !(reminders.length === 0 || activeView === 'today');
+  emptyStateEl.hidden = !showEmpty;
 
-  const sorted = [...reminders].sort((a, b) => a.time.localeCompare(b.time));
-
-  sorted.forEach((reminder, index) => {
+  visible.forEach((reminder, index) => {
     const taken = reminder.takenDate === today;
+    const upcoming = activeView === 'upcoming';
     const item = document.createElement('div');
     let node = item;
     let ringTargetOffset = null;
@@ -1093,17 +1210,25 @@ function render({ animateEntrance = false } = {}) {
     const colorHex = getReminderColorHex(reminder.color);
     item.className = 'reminder-item' + (taken ? ' taken' : '') + (colorHex ? ' has-color' : '');
     if (colorHex) item.style.setProperty('--reminder-color', colorHex);
+    // Upcoming reminders aren't due yet, so there's nothing to check off: a
+    // calendar mark stands in for the checkbox and the label leads with the day.
+    const leading = upcoming
+      ? '<span class="upcoming-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg></span>'
+      : `<button class="check-btn" aria-label="${taken ? 'Mark not taken' : 'Mark taken'}">${taken ? checkSvg(justTakenId === reminder.id) : ''}</button>`;
+    const timeLabel = upcoming
+      ? `${describeDay(nextOccurrence(reminder))} · ${formatTime(reminder.time)}`
+      : `${formatTime(reminder.time)}${recurrenceLabel ? ` · ${recurrenceLabel}` : ''}`;
     item.innerHTML = `
-      <button class="check-btn" aria-label="${taken ? 'Mark not taken' : 'Mark taken'}">${taken ? checkSvg(justTakenId === reminder.id) : ''}</button>
+      ${leading}
       <div class="reminder-info">
         <span class="reminder-name">${escapeHtml(reminder.name)}</span>
-        <span class="reminder-time">${formatTime(reminder.time)}${recurrenceLabel ? ` · ${recurrenceLabel}` : ''}</span>
+        <span class="reminder-time">${timeLabel}</span>
       </div>
       ${streakRing}
       <button class="delete-btn" aria-label="Delete">✕</button>
     `;
-    item.querySelector('.check-btn').addEventListener('click', () => toggleTaken(reminder.id));
-    item.querySelector('.reminder-info').addEventListener('click', () => openEdit(reminder.id));
+    item.querySelector('.check-btn')?.addEventListener('click', () => toggleTaken(reminder.id));
+    item.querySelector('.reminder-info').addEventListener('click', () => openDetail(reminder.id));
 
     // Wrap in a swipe row: delete sits behind it on the right (revealed
     // sliding left), complete sits behind it on the left (revealed sliding
@@ -1111,11 +1236,12 @@ function render({ animateEntrance = false } = {}) {
     const row = document.createElement('div');
     row.className = 'swipe-row' + (openSwipeId === reminder.id ? ' is-open is-swiping' : '');
     row.dataset.reminderId = reminder.id;
-    row.innerHTML = (taken ? '' : `<div class="swipe-complete" aria-hidden="true">${completeSvg()}</div>`)
+    const cannotComplete = taken || upcoming;
+    row.innerHTML = (cannotComplete ? '' : `<div class="swipe-complete" aria-hidden="true">${completeSvg()}</div>`)
       + '<button type="button" class="swipe-action" aria-label="Delete reminder">Delete</button>';
     row.appendChild(item);
     if (openSwipeId === reminder.id) item.style.transform = `translateX(-${SWIPE_ACTION_WIDTH}px)`;
-    wireSwipe(row, item, reminder.id, taken);
+    wireSwipe(row, item, reminder.id, cannotComplete);
     row.querySelector('.swipe-action').addEventListener('click', () => removeWithAnimation(row, reminder.id));
     item.querySelector('.delete-btn').addEventListener('click', () => removeWithAnimation(row, reminder.id));
     node = row;
@@ -1137,6 +1263,7 @@ function render({ animateEntrance = false } = {}) {
 function resetAddForm() {
   nameInput.value = '';
   timeInput.value = '';
+  notesInput.value = '';
   voiceTimeHint.hidden = true;
   recurrenceFieldsEl.innerHTML = renderRecurrenceFields();
   wireRecurrenceControls(addForm);
@@ -1158,28 +1285,99 @@ addForm.addEventListener('submit', async (e) => {
   const time = timeInput.value;
   const recurrence = readRecurrenceFromForm(addForm);
   if (!name || !time || !recurrence) return;
-  await addReminder(name, time, recurrence, readColorFromContainer(colorFieldsEl));
+  await addReminder(name, time, recurrence, readColorFromContainer(colorFieldsEl), notesInput.value.trim());
   closeScreen(addScreen);
 });
 
+// ---- Detail screen ----
+function describeRepeat(recurrence) {
+  const type = recurrence?.type || 'daily';
+  if (type === 'daily') return 'Every day';
+  if (type === 'once') return 'Does not repeat';
+  if (type === 'daysOfWeek') return `Weekly on ${describeRecurrence(recurrence)}`;
+  return describeRecurrence(recurrence);
+}
+
+function renderDetail() {
+  const reminder = reminders.find(r => r.id === detailId);
+  if (!reminder) return;
+  const dueToday = appliesToday(reminder);
+  const done = dueToday && reminder.takenDate === todayKey();
+  const next = dueToday ? null : nextOccurrence(reminder);
+  const day = dueToday ? 'Today' : describeDay(next);
+
+  detailTitleEl.textContent = reminder.name;
+  detailWhenEl.textContent = `${day}, ${formatTime(reminder.time)}${done ? ' · Done' : ''}`;
+  detailRepeatEl.textContent = describeRepeat(reminder.recurrence);
+  detailNotesEl.textContent = reminder.notes || '';
+  detailNotesBlockEl.hidden = !reminder.notes;
+
+  // Completing and snoozing only make sense for something that's due today.
+  detailCompleteBtn.hidden = !dueToday;
+  detailCompleteBtn.textContent = done ? 'Mark incomplete' : 'Mark complete';
+  detailSnoozeBtn.hidden = !dueToday || done;
+}
+
+function openDetail(id) {
+  if (!reminders.some(r => r.id === id)) return;
+  openScreen(detailScreen, () => {
+    detailId = id;
+    renderDetail();
+  });
+}
+
+async function closeDetail() {
+  // Only forget which reminder this was if the screen actually closed — a tap
+  // mid-slide is ignored by closeScreen and must leave the screen usable.
+  const closed = await closeScreen(detailScreen);
+  if (closed) detailId = null;
+  return closed;
+}
+
+detailBackBtn.addEventListener('click', closeDetail);
+
+// Leave first, then change the list, so the row's own animation (checkmark,
+// streak ring, confetti) is what the user sees as the result.
+detailCompleteBtn.addEventListener('click', async () => {
+  const id = detailId;
+  if (!(await closeDetail())) return;
+  await toggleTaken(id);
+});
+
+detailSnoozeBtn.addEventListener('click', async () => {
+  const reminder = reminders.find(r => r.id === detailId);
+  if (!reminder) return;
+  const ok = await scheduleSnooze(reminder);
+  if (ok) {
+    await closeDetail();
+    showToast(`Snoozed for ${SNOOZE_MINUTES} minutes`);
+  } else {
+    showToast("Couldn't snooze — check that notifications are allowed");
+  }
+});
+
+detailEditBtn.addEventListener('click', () => openEdit(detailId, detailScreen));
+
 // ---- Edit screen ----
-function openEdit(id) {
+function openEdit(id, from = appEl) {
   const reminder = reminders.find(r => r.id === id);
   if (!reminder) return;
   openScreen(editScreen, () => {
     editingId = id;
     editNameInput.value = reminder.name;
     editTimeInput.value = reminder.time;
+    editNotesInput.value = reminder.notes || '';
     editRecurrenceFieldsEl.innerHTML = renderRecurrenceFields(reminder.recurrence);
     wireRecurrenceControls(editForm);
     editColorFieldsEl.innerHTML = renderColorSwatches(reminder.color);
     wireColorSwatches(editColorFieldsEl);
-  });
+  }, from);
 }
 
+// Edit is only reachable from the detail screen now, so Back lands there.
 function closeEdit() {
   editingId = null;
-  closeScreen(editScreen);
+  closeScreen(editScreen, detailId !== null ? detailScreen : appEl);
 }
 
 editCloseBtn.addEventListener('click', closeEdit);
@@ -1191,7 +1389,8 @@ editForm.addEventListener('submit', async (e) => {
   const time = editTimeInput.value;
   const recurrence = readRecurrenceFromForm(editForm);
   if (!name || !time || !recurrence || editingId === null) return;
-  await updateReminder(editingId, name, time, recurrence, readColorFromContainer(editColorFieldsEl));
+  await updateReminder(editingId, name, time, recurrence, readColorFromContainer(editColorFieldsEl), editNotesInput.value.trim());
+  if (detailId !== null) renderDetail(); // refresh it before Back reveals it
   closeEdit();
 });
 
