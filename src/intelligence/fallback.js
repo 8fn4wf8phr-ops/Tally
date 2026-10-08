@@ -20,6 +20,8 @@ const ERRORS = {
   unsupported_language: "The on-device model doesn't support this language yet. You can add steps by hand.",
   rate_limited: 'The on-device model is busy. Try again in a moment.',
   invalid_output: "Couldn't come up with useful steps. Try rewording the task, or add steps by hand.",
+  empty_request: 'Say or type what you want to be reminded of.',
+  request_too_long: 'That is too long. Try a shorter sentence.',
   inference_failed: "Something went wrong making steps. Try again, or add steps by hand.",
 };
 

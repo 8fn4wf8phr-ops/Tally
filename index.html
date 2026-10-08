@@ -116,6 +116,12 @@
         <h2>New reminder</h2>
       </div>
       <form id="addForm" class="add-form">
+        <label class="field-label" for="nlInput">Describe it</label>
+        <div class="add-form-row">
+          <input type="text" id="nlInput" placeholder="Call Marcus tomorrow at 8 PM" maxlength="300" autocomplete="off" enterkeyhint="go">
+          <button type="button" id="nlFillBtn" class="btn-outline nl-btn">Fill in</button>
+        </div>
+        <div id="understandPanel" class="understand-panel" role="status" aria-live="polite" hidden></div>
         <label class="field-label" for="nameInput">Title</label>
         <div class="add-form-row">
           <input type="text" id="nameInput" placeholder="What do you need to remember?" required maxlength="60">
@@ -125,7 +131,6 @@
         </div>
         <label class="field-label" for="timeInput">Time</label>
         <input type="time" id="timeInput" required>
-        <span id="voiceTimeHint" class="voice-time-hint" hidden>Please confirm this guessed time</span>
         <label class="field-label">Repeat &amp; date</label>
         <div id="recurrenceFields" class="recurrence-fields"></div>
         <label class="field-label" for="notesInput">Notes (optional)</label>

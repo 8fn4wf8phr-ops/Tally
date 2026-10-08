@@ -2,7 +2,6 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { Preferences } from '@capacitor/preferences';
 import { Badge } from '@capawesome/capacitor-badge';
 import { markReminderTaken, checkStaleStreaks, isOnGrace, isStreakEligible, todayKey } from './streak.js';
-import { parseVoiceInput } from './voice.js';
 import { isVoiceAvailable, ensureVoicePermissions, startListening } from './voiceInput.js';
 import { getContextualGreeting, getEmptyStateMessage, isStreakMilestone, getMilestoneMessage, isStreakAcknowledgment, getStreakAcknowledgment, getStreakResetMessage, getNotificationBody } from './personalization.js';
 import { getPendingToday, countOverdue, isExpiredOneTime, isAllDoneToday, appliesToday, filterForView, nextOccurrence, describeDay } from './due.js';
@@ -38,6 +37,7 @@ import {
   isWithinQuietHours,
 } from './settings.js';
 import { intelligence } from './intelligence/default.js';
+import { applyAnswer, reminderCount, numberedNames, timeValue } from './intelligence/understand.js';
 import {
   getSubtasks,
   appendSubtasks,
@@ -78,6 +78,8 @@ let openSwipeId = null; // the row currently swiped open, if any
 let activeSettingsTab = 'personal';
 let activeView = 'today'; // Home tab: 'today' | 'upcoming' | 'done'
 let detailId = null; // the reminder whose detail screen is open, if any
+let understanding = null; // the add screen's current "Describe it" draft: its count and open questions
+let understandBusy = false;
 const ringProgressById = new Map(); // last-rendered ring fill, so changes can animate
 
 const listEl = document.getElementById('reminderList');
@@ -91,7 +93,9 @@ const defaultColorEl = document.getElementById('defaultColorSwatches');
 const permissionBanner = document.getElementById('permissionBanner');
 const enableNotifsBtn = document.getElementById('enableNotifsBtn');
 const micBtn = document.getElementById('micBtn');
-const voiceTimeHint = document.getElementById('voiceTimeHint');
+const nlInput = document.getElementById('nlInput');
+const nlFillBtn = document.getElementById('nlFillBtn');
+const understandPanel = document.getElementById('understandPanel');
 const voiceOverlay = document.getElementById('voiceOverlay');
 const voiceStatus = document.getElementById('voiceStatus');
 const voiceTranscript = document.getElementById('voiceTranscript');
@@ -946,7 +950,7 @@ enableNotifsBtn.addEventListener('click', async () => {
 });
 
 // ---- CRUD ----
-async function addReminder(name, time, recurrence, color, notes) {
+async function addReminder(name, time, recurrence, color, notes, subtasks = []) {
   const reminder = {
     id: nextId++,
     name,
@@ -954,6 +958,7 @@ async function addReminder(name, time, recurrence, color, notes) {
     recurrence,
     color,
     notes,
+    ...(subtasks.length ? { subtasks } : {}),
     takenDate: null,
     currentStreak: 0,
     longestStreak: 0,
@@ -1341,7 +1346,8 @@ function resetAddForm() {
   nameInput.value = '';
   timeInput.value = '';
   notesInput.value = '';
-  voiceTimeHint.hidden = true;
+  nlInput.value = '';
+  clearUnderstanding();
   recurrenceFieldsEl.innerHTML = renderRecurrenceFields();
   wireRecurrenceControls(addForm);
   renderAddFormColor();
@@ -1354,7 +1360,10 @@ openAddBtn.addEventListener('click', async () => {
   if (opened) nameInput.focus();
 });
 
-addCloseBtn.addEventListener('click', () => closeScreen(addScreen));
+addCloseBtn.addEventListener('click', () => {
+  intelligence.cancel();
+  closeScreen(addScreen);
+});
 
 addForm.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -1362,8 +1371,116 @@ addForm.addEventListener('submit', async (e) => {
   const time = timeInput.value;
   const recurrence = readRecurrenceFromForm(addForm);
   if (!name || !time || !recurrence) return;
-  await addReminder(name, time, recurrence, readColorFromContainer(colorFieldsEl), notesInput.value.trim());
+  const color = readColorFromContainer(colorFieldsEl);
+  const notes = notesInput.value.trim();
+  // "Add three job applications..." was confirmed as separate reminders or as
+  // one reminder with steps; everything else is a single reminder.
+  if (understanding && understanding.count > 1 && understanding.countMode === 'steps') {
+    await addReminder(name, time, recurrence, color, notes, appendSubtasks([], numberedNames(name, understanding.count)));
+  } else if (understanding && reminderCount(understanding) > 1) {
+    for (const numbered of numberedNames(name, understanding.count)) {
+      await addReminder(numbered, time, recurrence, color, notes);
+    }
+  } else {
+    await addReminder(name, time, recurrence, color, notes);
+  }
   closeScreen(addScreen);
+});
+
+// ---- Describe it (Understand Reminder) ----
+// A sentence, typed or spoken, becomes a draft in the form below. Questions
+// the sentence left open appear as choices. Nothing is saved or scheduled
+// until the user presses Save reminder, as with any other new reminder.
+function clearUnderstanding() {
+  understanding = null;
+  understandPanel.hidden = true;
+  understandPanel.innerHTML = '';
+}
+
+function renderUnderstandPanel({ usedAI = false, note = null, message = null } = {}) {
+  if (message) {
+    understandPanel.innerHTML = `<p class="understand-note">${escapeHtml(message)}</p>`;
+    understandPanel.hidden = false;
+    return;
+  }
+  const draft = understanding;
+  const intro = usedAI
+    ? 'Filled in on this iPhone. Check the details, then tap Save reminder.'
+    : 'Filled in. Check the details, then tap Save reminder.';
+  const questions = draft.questions.map(q => {
+    if (q.kind === 'input') {
+      return `<div class="understand-question" data-question="${q.id}"><p>${escapeHtml(q.message)}</p>
+        <div class="chips"><button type="button" class="chip" data-focus="${q.field}">Set it</button></div></div>`;
+    }
+    const chips = q.options.map((option, i) =>
+      `<button type="button" class="chip${i === q.defaultIndex ? ' is-default' : ''}" data-option="${i}">${escapeHtml(option.label)}</button>`).join('');
+    return `<div class="understand-question" data-question="${q.id}"><p>${escapeHtml(q.message)}</p><div class="chips">${chips}</div></div>`;
+  }).join('');
+  understandPanel.innerHTML = `<p class="understand-note">${escapeHtml(intro)}${note ? ` ${escapeHtml(note)}` : ''}</p>${questions}`;
+  understandPanel.hidden = false;
+}
+
+function applyDraftToForm(draft) {
+  nameInput.value = draft.name;
+  timeInput.value = timeValue(draft.time);
+  recurrenceFieldsEl.innerHTML = renderRecurrenceFields(draft.recurrence);
+  wireRecurrenceControls(addForm);
+}
+
+async function understandAndFill(text) {
+  if (understandBusy) return;
+  understandBusy = true;
+  nlFillBtn.disabled = true;
+  nlFillBtn.textContent = 'Reading…';
+  try {
+    const result = await intelligence.understandReminder(text);
+    if (result.status === 'cancelled') return;
+    if (result.status === 'error') {
+      understanding = null;
+      renderUnderstandPanel({ message: result.message });
+      return;
+    }
+    understanding = result.draft;
+    applyDraftToForm(understanding);
+    renderUnderstandPanel(result);
+    if (!understanding.name) nameInput.focus();
+  } finally {
+    understandBusy = false;
+    nlFillBtn.disabled = false;
+    nlFillBtn.textContent = 'Fill in';
+  }
+}
+
+nlFillBtn.addEventListener('click', () => understandAndFill(nlInput.value));
+
+// Enter here means "fill in", not "submit the form".
+nlInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    understandAndFill(nlInput.value);
+  }
+});
+
+understandPanel.addEventListener('click', (e) => {
+  const chip = e.target.closest('.chip');
+  const question = e.target.closest('[data-question]');
+  if (!chip || !question || !understanding) return;
+  if (chip.dataset.focus) {
+    const field = chip.dataset.focus;
+    (field === 'name' ? nameInput : field === 'date' ? addForm.querySelector('.recurrence-select') : timeInput).focus();
+    return;
+  }
+  const id = question.dataset.question;
+  const option = understanding.questions.find(q => q.id === id)?.options[Number(chip.dataset.option)];
+  if (!option) return;
+  understanding = applyAnswer(understanding, id, Number(chip.dataset.option));
+  // Apply only what this answer changed, so anything the user has typed since stays.
+  if (option.patch.time) timeInput.value = timeValue(option.patch.time);
+  if (option.patch.recurrence) {
+    recurrenceFieldsEl.innerHTML = renderRecurrenceFields(option.patch.recurrence);
+    wireRecurrenceControls(addForm);
+  }
+  renderUnderstandPanel({});
 });
 
 // ---- Detail screen ----
@@ -1648,10 +1765,6 @@ editForm.addEventListener('submit', async (e) => {
   closeEdit();
 });
 
-timeInput.addEventListener('input', () => {
-  voiceTimeHint.hidden = true;
-});
-
 // ---- Voice input ----
 // Speech recognition runs entirely on-device (SFSpeechRecognizer with
 // requiresOnDeviceRecognition = true, see SpeechInputPlugin.swift) — audio
@@ -1677,34 +1790,6 @@ function closeVoiceOverlay() {
   micBtn.classList.remove('listening');
 }
 
-function applyParsedVoiceInput(parsed) {
-  nameInput.value = parsed.name;
-  timeInput.value = parsed.time ? `${pad2(parsed.time.hour)}:${pad2(parsed.time.minute)}` : '';
-  // Show a hint whenever the time isn't a confident explicit match — a vague
-  // guess (no am/pm said) needs confirming, and no match at all needs a
-  // heads-up too, since an empty time field alone looks identical to "voice
-  // input didn't do anything" rather than "no time was understood."
-  if (!parsed.time) {
-    voiceTimeHint.textContent = 'No time understood — please set one';
-    voiceTimeHint.hidden = false;
-  } else if (parsed.time.vague) {
-    voiceTimeHint.textContent = 'Please confirm this guessed time';
-    voiceTimeHint.hidden = false;
-  } else {
-    voiceTimeHint.hidden = true;
-  }
-  const recurrence = parsed.recurrence;
-  // The parser deliberately never guesses a date for 'once' (see voice.js) —
-  // default it to today so the review form isn't stuck with an empty
-  // required field the user has to notice and fill in before Add works.
-  if (recurrence.type === 'once' && !recurrence.date) {
-    recurrence.date = todayKey();
-  }
-  recurrenceFieldsEl.innerHTML = renderRecurrenceFields(recurrence);
-  wireRecurrenceControls(addForm);
-  nameInput.focus();
-}
-
 async function stopVoiceSession() {
   if (!voiceSession) return;
   const session = voiceSession;
@@ -1726,7 +1811,8 @@ async function finishVoiceInput() {
   await stopVoiceSession();
   closeVoiceOverlay();
   if (transcript) {
-    applyParsedVoiceInput(parseVoiceInput(transcript));
+    nlInput.value = transcript;
+    understandAndFill(transcript);
   }
 }
 

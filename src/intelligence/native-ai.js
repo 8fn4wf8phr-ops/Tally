@@ -42,6 +42,15 @@ export function createNativeAI(plugin) {
       }
     },
 
+    // -> { title, dateText, timeText, repeatText } (unvalidated); rejects like breakDownTask.
+    async interpretReminder(text) {
+      try {
+        return await plugin.interpretReminder({ text });
+      } catch (e) {
+        throw normalizeError(e);
+      }
+    },
+
     async cancel() {
       try {
         await plugin.cancel();

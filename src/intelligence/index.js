@@ -9,8 +9,12 @@
 //   { status: 'error', code, message }
 //   { status: 'busy' | 'cancelled' }
 
-import { validateTitle, validateSteps } from './validation.js';
+import { validateTitle, validateSteps, validateRequest } from './validation.js';
+import { parseReminderRequest, needsInterpretation, draftFromParts } from './understand.js';
 import { unavailableMessage, errorMessage } from './fallback.js';
+
+// Shown when the model was tried but couldn't help; the rules' draft is used.
+const MODEL_FALLBACK_NOTE = "The on-device model couldn't read that one, so Tally filled in what it could. Please check the details.";
 
 export function createIntelligence({ native }) {
   let inFlight = null; // the one request allowed at a time
@@ -52,6 +56,43 @@ export function createIntelligence({ native }) {
         return failure(e?.code || 'inference_failed');
       } finally {
         if (inFlight === request) inFlight = null;
+      }
+    },
+
+    // Turns a typed or spoken sentence into a draft reminder (never saved here).
+    // Rules handle ordinary sentences with no model involved. Only when the
+    // rules leave time/date words in the title, or find no title, is the
+    // on-device model asked to split the sentence, and its pieces are checked
+    // against what was actually said and parsed by the same rules. If the
+    // model is unavailable or fails, the rules' draft is returned as it is.
+    // -> { status: 'ok', draft, usedAI, note } | { status: 'error', code, message } | { status: 'cancelled' }
+    async understandReminder(rawText, now = new Date()) {
+      const request = validateRequest(rawText);
+      if (!request.ok) return failure(request.code);
+
+      const rulesDraft = parseReminderRequest(request.text, now);
+      if (!needsInterpretation(rulesDraft)) return { status: 'ok', draft: rulesDraft, usedAI: false, note: null };
+      if (inFlight) return { status: 'ok', draft: rulesDraft, usedAI: false, note: null }; // model busy: rules only
+
+      const job = { cancelled: false };
+      inFlight = job;
+      try {
+        const availability = await native.availability();
+        if (job.cancelled) return { status: 'cancelled' };
+        if (!availability.available) return { status: 'ok', draft: rulesDraft, usedAI: false, note: null };
+
+        const parts = await native.interpretReminder(request.text);
+        if (job.cancelled) return { status: 'cancelled' };
+        const aiDraft = draftFromParts(parts, request.text, now);
+        if (!aiDraft) return { status: 'ok', draft: rulesDraft, usedAI: false, note: MODEL_FALLBACK_NOTE };
+        return { status: 'ok', draft: aiDraft, usedAI: true, note: null };
+      } catch (e) {
+        if (job.cancelled || e?.code === 'cancelled') return { status: 'cancelled' };
+        const quiet = e?.code === 'unavailable' || e?.code === 'plugin_unavailable' || e?.code === 'busy';
+        const note = quiet ? null : MODEL_FALLBACK_NOTE;
+        return { status: 'ok', draft: rulesDraft, usedAI: false, note };
+      } finally {
+        if (inFlight === job) inFlight = null;
       }
     },
 

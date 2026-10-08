@@ -7,6 +7,7 @@ export const MAX_TITLE_LENGTH = 200;
 export const MIN_STEPS = 3;
 export const MAX_STEPS = 5;
 export const MAX_STEP_LENGTH = 120;
+export const MAX_REQUEST_LENGTH = 300;
 
 const LIST_MARKER = /^(?:[-*•]|\d+[.)])\s+/;
 
@@ -56,4 +57,14 @@ export function validateSteps(raw) {
   const steps = normalizeSteps(raw);
   if (steps.length < MIN_STEPS) return { ok: false, code: 'invalid_output' };
   return { ok: true, steps };
+}
+
+// A typed or spoken reminder request.
+// -> { ok: true, text } | { ok: false, code: 'invalid_input' | 'empty_request' | 'request_too_long' }
+export function validateRequest(raw) {
+  if (typeof raw !== 'string') return { ok: false, code: 'invalid_input' };
+  const text = collapse(raw);
+  if (!text) return { ok: false, code: 'empty_request' };
+  if (text.length > MAX_REQUEST_LENGTH) return { ok: false, code: 'request_too_long' };
+  return { ok: true, text };
 }
