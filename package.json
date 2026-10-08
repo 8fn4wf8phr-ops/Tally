@@ -11,14 +11,14 @@
     "test": "node --test src/streak.test.js src/voice.test.js src/personalization.test.js src/settings.test.js src/due.test.js src/motion.test.js"
   },
   "dependencies": {
-    "@capacitor/core": "latest",
-    "@capacitor/local-notifications": "latest",
-    "@capacitor/preferences": "latest",
+    "@capacitor/core": "8.5.1",
+    "@capacitor/local-notifications": "8.3.1",
+    "@capacitor/preferences": "8.0.1",
     "@capawesome/capacitor-badge": "^8.0.3"
   },
   "devDependencies": {
-    "@capacitor/cli": "latest",
-    "@capacitor/ios": "latest",
-    "vite": "latest"
+    "@capacitor/cli": "8.5.1",
+    "@capacitor/ios": "8.5.1",
+    "vite": "8.2.2"
   }
 }
