@@ -21,18 +21,47 @@ export function normalizeGreetingStyle(value) {
 // "Teal" (id kept for stored preferences) is the brand's Deep Teal #0a4750 —
 // the app's one formally-named default accent. White text on it is 10.3:1.
 export const ACCENT_THEMES = {
-  teal: { label: 'Deep teal', accent: '#0a4750', accentDark: '#062f35', accentLight: '#dfe9df' },
-  coral: { label: 'Coral', accent: '#ff6b6b', accentDark: '#e14b4b', accentLight: '#ffe1e1' },
-  violet: { label: 'Violet', accent: '#6b3ded', accentDark: '#5430c7', accentLight: '#e6defc' },
-  sky: { label: 'Sky', accent: '#4ea8de', accentDark: '#2f86c0', accentLight: '#dcf0fb' },
-  indigo: { label: 'Indigo', accent: '#6c7ce0', accentDark: '#4f5fc4', accentLight: '#e3e6fa' },
-  mint: { label: 'Mint', accent: '#5fd9b0', accentDark: '#34b98c', accentLight: '#daf7ed' },
+  teal: { label: 'Deep teal', accent: '#0a4750', accentDark: '#062f35', accentLight: '#dfe9df', dark: { accent: '#5cc0cb', accentDark: '#8dd3db', accentLight: '#1f5057' } },
+  coral: { label: 'Coral', accent: '#ff6b6b', accentDark: '#e14b4b', accentLight: '#ffe1e1', dark: { accent: '#ff7b7b', accentDark: '#ffa3a3', accentLight: '#434045' } },
+  violet: { label: 'Violet', accent: '#6b3ded', accentDark: '#5430c7', accentLight: '#e6defc', dark: { accent: '#a98bff', accentDark: '#c3aeff', accentLight: '#304462' } },
+  sky: { label: 'Sky', accent: '#4ea8de', accentDark: '#2f86c0', accentLight: '#dcf0fb', dark: { accent: '#5fb4e8', accentDark: '#8fcaef', accentLight: '#204d5d' } },
+  indigo: { label: 'Indigo', accent: '#6c7ce0', accentDark: '#4f5fc4', accentLight: '#e3e6fa', dark: { accent: '#8e9bf0', accentDark: '#b0b9f4', accentLight: '#2a485f' } },
+  mint: { label: 'Mint', accent: '#5fd9b0', accentDark: '#34b98c', accentLight: '#daf7ed', dark: { accent: '#5fd9b0', accentDark: '#8fe4c8', accentLight: '#205551' } },
 };
 
 export const DEFAULT_ACCENT_THEME = 'teal';
 
-export function getAccentTheme(id) {
-  return ACCENT_THEMES[id] || ACCENT_THEMES[DEFAULT_ACCENT_THEME];
+// In dark mode the accent doubles as text/border/stroke on a dark surface, so
+// each theme carries a lifted `dark` variant (all >= 5:1 against the dark card)
+// and fills take dark ink instead of white — see --on-accent in style.css.
+// Returns the same {accent, accentDark, accentLight} shape for either scheme.
+export function getAccentTheme(id, scheme = 'light') {
+  const theme = ACCENT_THEMES[id] || ACCENT_THEMES[DEFAULT_ACCENT_THEME];
+  if (scheme === 'dark') return { label: theme.label, ...theme.dark };
+  return theme;
+}
+
+// ---- Appearance (light / dark) ----
+// 'system' follows iOS and is the default, so dark mode simply works for
+// anyone already running iOS in dark. The stored value is its own
+// preference key; the accent theme key is untouched.
+export const APPEARANCE_MODES = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+];
+
+export const DEFAULT_APPEARANCE = 'system';
+
+export function normalizeAppearance(value) {
+  return APPEARANCE_MODES.some(m => m.value === value) ? value : DEFAULT_APPEARANCE;
+}
+
+// -> 'light' | 'dark'
+export function resolveScheme(mode, systemPrefersDark) {
+  const m = normalizeAppearance(mode);
+  if (m === 'system') return systemPrefersDark ? 'dark' : 'light';
+  return m;
 }
 
 // ---- Reminder defaults ----

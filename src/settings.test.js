@@ -10,6 +10,8 @@ import {
   normalizeGreetingStyle,
   graceOccurrencesForHours,
   isWithinQuietHours,
+  normalizeAppearance,
+  resolveScheme,
 } from './settings.js';
 
 test('normalizeGreetingStyle keeps valid styles and defaults anything else to simple', () => {
@@ -87,4 +89,30 @@ test('isWithinQuietHours treats a zero-length window as quieting nothing', () =>
   const range = { enabled: true, start: '09:00', end: '09:00' };
   assert.equal(isWithinQuietHours(9, 0, range), false);
   assert.equal(isWithinQuietHours(12, 0, range), false);
+});
+
+test('normalizeAppearance defaults anything unknown to system', () => {
+  assert.equal(normalizeAppearance('dark'), 'dark');
+  assert.equal(normalizeAppearance('light'), 'light');
+  assert.equal(normalizeAppearance('system'), 'system');
+  assert.equal(normalizeAppearance(null), 'system');
+  assert.equal(normalizeAppearance('sepia'), 'system');
+});
+
+test('resolveScheme follows the OS only in system mode', () => {
+  assert.equal(resolveScheme('system', true), 'dark');
+  assert.equal(resolveScheme('system', false), 'light');
+  assert.equal(resolveScheme('light', true), 'light');
+  assert.equal(resolveScheme('dark', false), 'dark');
+  assert.equal(resolveScheme(undefined, true), 'dark'); // unknown -> system
+});
+
+test('every accent theme has a dark variant and getAccentTheme picks by scheme', () => {
+  for (const [id, theme] of Object.entries(ACCENT_THEMES)) {
+    assert.ok(theme.dark?.accent && theme.dark.accentDark && theme.dark.accentLight, id);
+    assert.deepEqual(getAccentTheme(id, 'dark').accent, theme.dark.accent);
+    assert.equal(getAccentTheme(id, 'light').accent, theme.accent);
+    assert.equal(getAccentTheme(id).accent, theme.accent); // light stays the default
+  }
+  assert.equal(getAccentTheme('nope', 'dark').accent, ACCENT_THEMES.teal.dark.accent);
 });

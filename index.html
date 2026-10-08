@@ -17,9 +17,25 @@
           indigo: ['#6c7ce0', '#4f5fc4', '#e3e6fa'],
           mint: ['#5fd9b0', '#34b98c', '#daf7ed'],
         };
+        // Dark variants — keep in sync with ACCENT_THEMES[*].dark in settings.js.
+        var DARK = {
+          teal: ['#5cc0cb', '#8dd3db', '#1f5057'],
+          coral: ['#ff7b7b', '#ffa3a3', '#434045'],
+          violet: ['#a98bff', '#c3aeff', '#304462'],
+          sky: ['#5fb4e8', '#8fcaef', '#204d5d'],
+          indigo: ['#8e9bf0', '#b0b9f4', '#2a485f'],
+          mint: ['#5fd9b0', '#8fe4c8', '#205551'],
+        };
+        // matchMedia works synchronously on-device too, so System mode is
+        // flash-free natively; a forced Light/Dark choice is only readable
+        // here in the web preview (same localStorage caveat as the accent).
+        var mode = localStorage.getItem('CapacitorStorage.tally-appearance');
+        var dark = mode === 'dark' || (mode !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
         var id = localStorage.getItem('CapacitorStorage.tally-accent-theme');
-        var t = THEMES[id] || THEMES.teal;
-        var root = document.documentElement.style;
+        var t = (dark ? DARK : THEMES)[id] || (dark ? DARK : THEMES).teal;
+        var el = document.documentElement;
+        el.setAttribute('data-scheme', dark ? 'dark' : 'light');
+        var root = el.style;
         root.setProperty('--accent-color', t[0]);
         root.setProperty('--accent-color-dark', t[1]);
         root.setProperty('--accent-color-light', t[2]);
@@ -27,6 +43,7 @@
     })();
   </script>
   <meta charset="UTF-8">
+  <meta name="color-scheme" content="light dark">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Tally</title>
 </head>
@@ -225,6 +242,8 @@
 
         <section class="settings-panel" data-panel="appearance" role="tabpanel">
           <h3 class="settings-section-title">Appearance</h3>
+          <label class="settings-label">Mode</label>
+          <div id="appearanceToggle" class="segmented-control"></div>
           <label class="settings-label">Accent color</label>
           <div id="themeSwatches" class="theme-swatches"></div>
         </section>

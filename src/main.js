@@ -19,6 +19,10 @@ import {
 } from './motion.js';
 import {
   ACCENT_THEMES,
+  APPEARANCE_MODES,
+  DEFAULT_APPEARANCE,
+  normalizeAppearance,
+  resolveScheme,
   DEFAULT_ACCENT_THEME,
   getAccentTheme,
   GREETING_STYLES,
@@ -40,6 +44,7 @@ const NEXT_ID_KEY = 'tally-next-id';
 const USER_NAME_KEY = 'tally-user-name';
 const ONBOARDED_KEY = 'tally-onboarded';
 const ACCENT_THEME_KEY = 'tally-accent-theme';
+const APPEARANCE_KEY = 'tally-appearance';
 const REMINDER_DEFAULTS_KEY = 'tally-reminder-defaults';
 const QUIET_HOURS_KEY = 'tally-quiet-hours';
 const GREETING_STYLE_KEY = 'tally-greeting-style';
@@ -49,6 +54,7 @@ let nextId = 1;
 let editingId = null;
 let userName = null;
 let accentTheme = DEFAULT_ACCENT_THEME;
+let appearance = DEFAULT_APPEARANCE;
 let greetingStyle = DEFAULT_GREETING_STYLE;
 let reminderDefaults = { ...DEFAULT_REMINDER_DEFAULTS };
 let quietHours = { ...DEFAULT_QUIET_HOURS };
@@ -85,6 +91,7 @@ const settingsCloseBtn = document.getElementById('settingsCloseBtn');
 const settingsNameInput = document.getElementById('settingsNameInput');
 const greetingStyleToggleEl = document.getElementById('greetingStyleToggle');
 const themeSwatchesEl = document.getElementById('themeSwatches');
+const appearanceToggleEl = document.getElementById('appearanceToggle');
 const graceOptionsEl = document.getElementById('graceOptions');
 const soundToggleEl = document.getElementById('soundToggle');
 const quietHoursToggleEl = document.getElementById('quietHoursToggle');
@@ -455,12 +462,41 @@ async function loadAccentTheme() {
   accentTheme = ACCENT_THEMES[value] ? value : DEFAULT_ACCENT_THEME;
 }
 
+// Light / dark. 'system' follows iOS live (the media query listener below);
+// light and dark force it. The resolved scheme lands on <html data-scheme>,
+// which style.css keys its dark tokens off, and also picks which accent
+// variant applyAccentTheme uses.
+const systemDarkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+function currentScheme() {
+  return resolveScheme(appearance, systemDarkQuery.matches);
+}
+
+async function loadAppearance() {
+  const { value } = await Preferences.get({ key: APPEARANCE_KEY });
+  appearance = normalizeAppearance(value);
+}
+
+async function saveAppearance(mode) {
+  appearance = normalizeAppearance(mode);
+  await Preferences.set({ key: APPEARANCE_KEY, value: appearance });
+  applyAccentTheme();
+}
+
+systemDarkQuery.addEventListener('change', () => {
+  if (appearance === 'system') applyAccentTheme();
+});
+
 // Sets the CSS custom properties every accent-colored rule in style.css
-// reads from. Called on init (before render, to avoid a flash of the
-// default color) and again immediately whenever the theme changes.
+// reads from, plus the light/dark scheme they sit on. Called on init (before
+// render, to avoid a flash of the default color) and again immediately
+// whenever the theme or appearance changes.
 function applyAccentTheme() {
-  const theme = getAccentTheme(accentTheme);
-  const root = document.documentElement.style;
+  const scheme = currentScheme();
+  const theme = getAccentTheme(accentTheme, scheme);
+  const rootEl = document.documentElement;
+  rootEl.dataset.scheme = scheme;
+  const root = rootEl.style;
   root.setProperty('--accent-color', theme.accent);
   root.setProperty('--accent-color-dark', theme.accentDark);
   root.setProperty('--accent-color-light', theme.accentLight);
@@ -523,8 +559,18 @@ function renderSettingsScreen() {
     });
   });
 
+  appearanceToggleEl.innerHTML = APPEARANCE_MODES.map(mode => `
+    <button type="button" class="segmented-btn${mode.value === appearance ? ' selected' : ''}" data-mode="${mode.value}">${mode.label}</button>
+  `).join('');
+  appearanceToggleEl.querySelectorAll('.segmented-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await saveAppearance(btn.dataset.mode);
+      renderSettingsScreen();
+    });
+  });
+
   themeSwatchesEl.innerHTML = Object.entries(ACCENT_THEMES).map(([id, theme]) => `
-    <button type="button" class="theme-swatch${id === accentTheme ? ' selected' : ''}" data-theme="${id}" style="background:${theme.accent}" aria-label="${theme.label} theme"></button>
+    <button type="button" class="theme-swatch${id === accentTheme ? ' selected' : ''}" data-theme="${id}" style="background:${getAccentTheme(id, currentScheme()).accent}" aria-label="${theme.label} theme"></button>
   `).join('');
   themeSwatchesEl.querySelectorAll('.theme-swatch').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -1521,6 +1567,7 @@ async function init() {
   // before the page runs — so there, this is the earliest point a flash can
   // be avoided, not a hard guarantee zero frames ever paint the default.
   await loadAccentTheme();
+  await loadAppearance();
   applyAccentTheme();
 
   await loadUserName();
