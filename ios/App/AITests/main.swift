@@ -14,6 +14,15 @@ expect(TallyStepCleaner.cleanTitle(String(repeating: "a", count: 201)) == nil, "
 expect(TallyStepCleaner.cleanTitle(String(repeating: "a", count: 200)) != nil, "200-char title accepted")
 expect(TallyStepCleaner.cleanTitle("  Build   my\n portfolio ") == "Build my portfolio", "title whitespace collapsed")
 
+// Requests and fragments
+expect(TallyStepCleaner.cleanRequest("  ") == nil, "blank request rejected")
+expect(TallyStepCleaner.cleanRequest(String(repeating: "a", count: 301)) == nil, "over-long request rejected")
+expect(TallyStepCleaner.cleanRequest(String(repeating: "a", count: 300)) != nil, "300-char request accepted")
+expect(TallyStepCleaner.cleanRequest(" Call  Marcus\ntomorrow ") == "Call Marcus tomorrow", "request whitespace collapsed")
+expect(TallyStepCleaner.cleanFragment("") == "", "empty fragment allowed")
+expect(TallyStepCleaner.cleanFragment("  next   Friday ") == "next Friday", "fragment whitespace collapsed")
+expect(TallyStepCleaner.cleanFragment(String(repeating: "x", count: 200)).count == TallyStepCleaner.maxFragmentLength, "long fragment shortened")
+
 // Steps
 expect(TallyStepCleaner.cleanSteps(["1. Outline sections", "2) Gather projects", "- Build layout"])
     == ["Outline sections", "Gather projects", "Build layout"], "list markers stripped")

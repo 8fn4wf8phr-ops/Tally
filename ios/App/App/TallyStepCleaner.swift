@@ -10,6 +10,8 @@ enum TallyStepCleaner {
     static let maxSteps = 5
     static let maxStepLength = 120
     static let maxTitleLength = 200
+    static let maxRequestLength = 300
+    static let maxFragmentLength = 80
 
     private static func collapse(_ text: String) -> String {
         text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
@@ -20,6 +22,22 @@ enum TallyStepCleaner {
         let title = collapse(raw)
         guard !title.isEmpty, title.count <= maxTitleLength else { return nil }
         return title
+    }
+
+    /// A spoken or typed reminder request ready to send to the model, or nil
+    /// if it is empty or too long.
+    static func cleanRequest(_ raw: String) -> String? {
+        let request = collapse(raw)
+        guard !request.isEmpty, request.count <= maxRequestLength else { return nil }
+        return request
+    }
+
+    /// One piece of a split request (a title or a date/time/repeat phrase):
+    /// whitespace collapsed and length-limited. Empty is allowed and means
+    /// "not mentioned".
+    static func cleanFragment(_ raw: String) -> String {
+        let text = collapse(raw)
+        return text.count > maxFragmentLength ? String(text.prefix(maxFragmentLength)).trimmingCharacters(in: .whitespaces) : text
     }
 
     /// Model output -> display-ready steps: trimmed, list markers removed,
