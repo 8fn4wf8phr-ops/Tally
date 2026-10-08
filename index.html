@@ -166,11 +166,55 @@
         <p class="field-label">Notes</p>
         <p id="detailNotes" class="detail-notes"></p>
       </div>
+      <div id="detailStepsBlock" class="detail-steps">
+        <p class="field-label">Steps <span id="detailStepsProgress" class="steps-progress"></span></p>
+        <ul id="detailStepsList" class="steps-list" aria-label="Steps"></ul>
+        <form id="stepAddForm" class="step-add">
+          <input type="text" id="stepAddInput" placeholder="Add a step" maxlength="120" aria-label="Add a step" autocomplete="off">
+          <button type="submit" class="btn-outline step-add-btn">Add</button>
+        </form>
+        <button type="button" id="breakIntoStepsBtn" class="btn-outline">Break into Steps</button>
+      </div>
       <div class="detail-actions">
         <button type="button" id="detailCompleteBtn" class="btn-add">Mark complete</button>
         <button type="button" id="detailSnoozeBtn" class="btn-outline">Snooze 10 min</button>
       </div>
       <button type="button" id="detailEditBtn" class="link-btn">Edit reminder</button>
+    </div>
+  </div>
+
+  <div id="stepsScreen" class="fullscreen-overlay" hidden>
+    <div class="fullscreen-card">
+      <div class="screen-header">
+        <button type="button" id="stepsBackBtn" class="btn-back" aria-label="Back">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+        </button>
+        <h2>Break into Steps</h2>
+      </div>
+      <p id="stepsTaskName" class="steps-task"></p>
+
+      <div id="stepsStatus" class="steps-status" role="status" aria-live="polite" hidden>
+        <span class="spinner" aria-hidden="true"></span>
+        <span>Thinking on your iPhone…</span>
+        <button type="button" id="stepsCancelBtn" class="btn-text">Cancel</button>
+      </div>
+
+      <div id="stepsMessage" class="steps-message" role="alert" hidden>
+        <p id="stepsMessageText"></p>
+        <div class="detail-actions">
+          <button type="button" id="stepsManualBtn" class="btn-add">Add steps by hand</button>
+          <button type="button" id="stepsRetryBtn" class="btn-outline">Try again</button>
+        </div>
+      </div>
+
+      <div id="stepsReview" hidden>
+        <p class="fullscreen-sub">Suggested on this iPhone. Edit, uncheck or remove any step, then save the ones you want.</p>
+        <ul id="stepsList" class="steps-list" aria-label="Suggested steps"></ul>
+        <div class="detail-actions">
+          <button type="button" id="stepsSaveBtn" class="btn-add">Save steps</button>
+          <button type="button" id="stepsAgainBtn" class="btn-outline">Suggest again</button>
+        </div>
+      </div>
     </div>
   </div>
 

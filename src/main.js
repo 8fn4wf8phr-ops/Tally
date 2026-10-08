@@ -37,6 +37,19 @@ import {
   DEFAULT_QUIET_HOURS,
   isWithinQuietHours,
 } from './settings.js';
+import { intelligence } from './intelligence/default.js';
+import {
+  getSubtasks,
+  appendSubtasks,
+  toggleSubtask,
+  removeSubtask,
+  subtaskProgress,
+  buildReview,
+  editReviewItem,
+  toggleReviewItem,
+  discardReviewItem,
+  approvedSteps,
+} from './subtasks.js';
 import './style.css';
 
 const STORAGE_KEY = 'tally-reminders';
@@ -137,6 +150,24 @@ const detailNotesEl = document.getElementById('detailNotes');
 const detailCompleteBtn = document.getElementById('detailCompleteBtn');
 const detailSnoozeBtn = document.getElementById('detailSnoozeBtn');
 const detailEditBtn = document.getElementById('detailEditBtn');
+const detailStepsProgressEl = document.getElementById('detailStepsProgress');
+const detailStepsListEl = document.getElementById('detailStepsList');
+const stepAddForm = document.getElementById('stepAddForm');
+const stepAddInput = document.getElementById('stepAddInput');
+const breakIntoStepsBtn = document.getElementById('breakIntoStepsBtn');
+const stepsScreen = document.getElementById('stepsScreen');
+const stepsBackBtn = document.getElementById('stepsBackBtn');
+const stepsTaskNameEl = document.getElementById('stepsTaskName');
+const stepsStatusEl = document.getElementById('stepsStatus');
+const stepsCancelBtn = document.getElementById('stepsCancelBtn');
+const stepsMessageEl = document.getElementById('stepsMessage');
+const stepsMessageTextEl = document.getElementById('stepsMessageText');
+const stepsManualBtn = document.getElementById('stepsManualBtn');
+const stepsRetryBtn = document.getElementById('stepsRetryBtn');
+const stepsReviewEl = document.getElementById('stepsReview');
+const stepsListEl = document.getElementById('stepsList');
+const stepsSaveBtn = document.getElementById('stepsSaveBtn');
+const stepsAgainBtn = document.getElementById('stepsAgainBtn');
 
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -1362,6 +1393,7 @@ function renderDetail() {
   detailCompleteBtn.hidden = !dueToday;
   detailCompleteBtn.textContent = done ? 'Mark incomplete' : 'Mark complete';
   detailSnoozeBtn.hidden = !dueToday || done;
+  renderDetailSteps();
 }
 
 function openDetail(id) {
@@ -1403,6 +1435,182 @@ detailSnoozeBtn.addEventListener('click', async () => {
 });
 
 detailEditBtn.addEventListener('click', () => openEdit(detailId, detailScreen));
+
+// ---- Steps (subtasks) ----
+// Steps live on the reminder as an optional list. Saving them only rewrites
+// that list: the reminder's time, recurrence and notifications are untouched,
+// and steps never get notifications of their own.
+function escapeAttr(str) {
+  return escapeHtml(str).replace(/"/g, '&quot;');
+}
+
+function detailReminder() {
+  return reminders.find(r => r.id === detailId);
+}
+
+async function saveSubtasks(reminder, subtasks) {
+  reminder.subtasks = subtasks;
+  await saveReminders();
+  renderDetailSteps();
+}
+
+function renderDetailSteps() {
+  const reminder = detailReminder();
+  if (!reminder) return;
+  const steps = getSubtasks(reminder);
+  const { done, total } = subtaskProgress(steps);
+  detailStepsProgressEl.textContent = total ? `· ${done} of ${total} done` : '';
+  detailStepsListEl.hidden = total === 0;
+  detailStepsListEl.innerHTML = steps.map(step => `
+    <li class="step-item${step.done ? ' is-done' : ''}" data-step-id="${step.id}">
+      <label class="step-check"><input type="checkbox"${step.done ? ' checked' : ''}><span>${escapeHtml(step.title)}</span></label>
+      <button type="button" class="step-remove" aria-label="Remove step">✕</button>
+    </li>
+  `).join('');
+}
+
+detailStepsListEl.addEventListener('change', (e) => {
+  const item = e.target.closest('[data-step-id]');
+  const reminder = detailReminder();
+  if (item && reminder) saveSubtasks(reminder, toggleSubtask(getSubtasks(reminder), Number(item.dataset.stepId)));
+});
+
+detailStepsListEl.addEventListener('click', (e) => {
+  const remove = e.target.closest('.step-remove');
+  const item = e.target.closest('[data-step-id]');
+  const reminder = detailReminder();
+  if (remove && item && reminder) saveSubtasks(reminder, removeSubtask(getSubtasks(reminder), Number(item.dataset.stepId)));
+});
+
+// Adding by hand always works, with or without on-device AI.
+stepAddForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const reminder = detailReminder();
+  const text = stepAddInput.value.trim();
+  if (!reminder || !text) return;
+  const before = getSubtasks(reminder);
+  const after = appendSubtasks(before, [text]);
+  if (after.length === before.length) {
+    showToast('That step is already on the list');
+    return;
+  }
+  stepAddInput.value = '';
+  await saveSubtasks(reminder, after);
+});
+
+// ---- Break into Steps (on-device suggestions, reviewed before saving) ----
+let stepsReview = [];
+
+function showStepsPanel(panel) {
+  [stepsStatusEl, stepsMessageEl, stepsReviewEl].forEach(el => { el.hidden = el !== panel; });
+}
+
+function updateStepsSaveButton() {
+  const count = approvedSteps(stepsReview).length;
+  stepsSaveBtn.disabled = count === 0;
+  stepsSaveBtn.textContent = count === 0 ? 'Select steps to save' : `Save ${count} step${count === 1 ? '' : 's'}`;
+}
+
+function renderStepsReview() {
+  stepsListEl.innerHTML = stepsReview.map(item => `
+    <li class="step-item" data-review-id="${item.id}">
+      <input type="checkbox" aria-label="Include this step"${item.selected ? ' checked' : ''}>
+      <input type="text" class="step-input" value="${escapeAttr(item.text)}" maxlength="120" aria-label="Step text">
+      <button type="button" class="step-remove" aria-label="Discard this step">✕</button>
+    </li>
+  `).join('');
+  updateStepsSaveButton();
+}
+
+// Permanent conditions (old iOS, ineligible device) don't get a "Try again".
+const PERMANENT_UNAVAILABLE = ['os_unsupported', 'device_not_eligible', 'plugin_unavailable', 'unknown'];
+
+async function runBreakdown() {
+  const reminder = detailReminder();
+  if (!reminder) return;
+  showStepsPanel(stepsStatusEl);
+  // A request cancelled a moment ago may still be winding down natively.
+  let result;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    result = await intelligence.breakIntoSteps(reminder.name);
+    if (result.status !== 'busy') break;
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  if (result.status === 'cancelled' || stepsScreen.hidden) return; // the user left; nothing to show
+  if (result.status === 'ok') {
+    stepsReview = buildReview(result.steps);
+    renderStepsReview();
+    showStepsPanel(stepsReviewEl);
+    return;
+  }
+  stepsMessageTextEl.textContent = result.message || 'Still working on another request. Try again in a moment.';
+  stepsRetryBtn.hidden = result.status === 'unavailable' && PERMANENT_UNAVAILABLE.includes(result.reason);
+  showStepsPanel(stepsMessageEl);
+}
+
+async function openSteps() {
+  const reminder = detailReminder();
+  if (!reminder) return;
+  const opened = await openScreen(stepsScreen, () => {
+    stepsTaskNameEl.textContent = reminder.name;
+    stepsReview = [];
+    showStepsPanel(stepsStatusEl);
+  }, detailScreen);
+  if (opened) runBreakdown();
+}
+
+function closeSteps() {
+  intelligence.cancel();
+  stepsReview = [];
+  return closeScreen(stepsScreen, detailScreen);
+}
+
+breakIntoStepsBtn.addEventListener('click', openSteps);
+stepsBackBtn.addEventListener('click', closeSteps);
+stepsCancelBtn.addEventListener('click', closeSteps);
+stepsRetryBtn.addEventListener('click', runBreakdown);
+stepsAgainBtn.addEventListener('click', runBreakdown);
+
+stepsManualBtn.addEventListener('click', async () => {
+  await closeSteps();
+  stepAddInput.focus();
+});
+
+stepsListEl.addEventListener('change', (e) => {
+  const item = e.target.closest('[data-review-id]');
+  if (!item || e.target.type !== 'checkbox') return;
+  stepsReview = toggleReviewItem(stepsReview, Number(item.dataset.reviewId));
+  updateStepsSaveButton();
+});
+
+stepsListEl.addEventListener('input', (e) => {
+  const item = e.target.closest('[data-review-id]');
+  if (!item || !e.target.classList.contains('step-input')) return;
+  stepsReview = editReviewItem(stepsReview, Number(item.dataset.reviewId), e.target.value);
+  updateStepsSaveButton();
+});
+
+stepsListEl.addEventListener('click', (e) => {
+  const remove = e.target.closest('.step-remove');
+  const item = e.target.closest('[data-review-id]');
+  if (!remove || !item) return;
+  stepsReview = discardReviewItem(stepsReview, Number(item.dataset.reviewId));
+  renderStepsReview();
+});
+
+// The only place suggested steps become real data, and only the ones the user
+// left selected, in the text they left them.
+stepsSaveBtn.addEventListener('click', async () => {
+  const reminder = detailReminder();
+  const titles = approvedSteps(stepsReview);
+  if (!reminder || titles.length === 0) return;
+  const before = getSubtasks(reminder);
+  const after = appendSubtasks(before, titles);
+  await saveSubtasks(reminder, after);
+  const added = after.length - before.length;
+  await closeSteps();
+  showToast(added === 0 ? 'Those steps were already on the list' : `Added ${added} step${added === 1 ? '' : 's'}`);
+});
 
 // ---- Edit screen ----
 function openEdit(id, from = appEl) {

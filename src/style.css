@@ -1392,6 +1392,7 @@ select,
 /* Form-like screens read top-down (the card is vertically centered by default). */
 #addScreen .fullscreen-card,
 #editScreen .fullscreen-card,
+#stepsScreen .fullscreen-card,
 #detailScreen .fullscreen-card {
   margin-top: 0;
 }
@@ -1491,4 +1492,194 @@ select,
   text-decoration: underline;
   text-underline-offset: 4px;
   cursor: pointer;
+}
+
+/* ---- Steps (subtasks) and Break into Steps ---- */
+.detail-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.steps-progress {
+  font-weight: 500;
+}
+
+.steps-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.steps-list[hidden],
+.steps-status[hidden],
+.steps-message[hidden],
+#stepsReview[hidden],
+.detail-steps[hidden] {
+  display: none;
+}
+
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 6px 0 14px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+}
+
+.step-check {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 0;
+  cursor: pointer;
+}
+
+.step-check input,
+.step-item > input[type="checkbox"] {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent-color);
+}
+
+.step-check span {
+  overflow-wrap: anywhere;
+}
+
+.step-item.is-done .step-check span {
+  color: var(--color-muted);
+  text-decoration: line-through;
+}
+
+/* .fullscreen-card styles every text input as a standalone field; inside a
+   step row the input is just text on the row's own card, so undo that. */
+.fullscreen-card .step-item > .step-input {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 1rem;
+}
+
+.fullscreen-card .step-item > .step-input:focus {
+  outline: none;
+  border: none;
+}
+
+.step-item:focus-within {
+  border-color: var(--accent-color);
+}
+
+.step-remove {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.step-remove:active {
+  background: var(--accent-color-light);
+}
+
+.step-add {
+  display: flex;
+  gap: 8px;
+}
+
+.step-add input {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 1rem;
+}
+
+.step-add input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+
+.step-add-btn {
+  flex: none;
+  padding: 10px 18px;
+}
+
+.steps-task {
+  margin-top: -6px;
+  color: var(--color-muted);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.steps-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  color: var(--color-muted);
+  font-weight: 500;
+}
+
+.steps-status .btn-text {
+  margin-left: auto;
+}
+
+.spinner {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: 3px solid var(--accent-color-light);
+  border-top-color: var(--accent-color);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.steps-message {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  line-height: 1.4;
+}
+
+#stepsReview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#stepsReview[hidden] {
+  display: none;
 }
