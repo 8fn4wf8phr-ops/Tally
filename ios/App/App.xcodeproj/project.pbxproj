@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		2613833E3E654C5690ABA422 /* SpeechInputPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CEF49B207524DBAA3F95B63 /* SpeechInputPlugin.swift */; };
+		B22D0001B22D0001B22D0001 /* TallyStepCleaner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11C0001A11C0001A11C0001 /* TallyStepCleaner.swift */; };
+		B22D0002B22D0002B22D0002 /* TallyAIEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11C0002A11C0002A11C0002 /* TallyAIEngine.swift */; };
+		B22D0003B22D0003B22D0003 /* TallyAIPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11C0003A11C0003A11C0003 /* TallyAIPlugin.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
@@ -32,6 +35,9 @@
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		7CEF49B207524DBAA3F95B63 /* SpeechInputPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechInputPlugin.swift; sourceTree = "<group>"; };
+		A11C0001A11C0001A11C0001 /* TallyStepCleaner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TallyStepCleaner.swift; sourceTree = "<group>"; };
+		A11C0002A11C0002A11C0002 /* TallyAIEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TallyAIEngine.swift; sourceTree = "<group>"; };
+		A11C0003A11C0003A11C0003 /* TallyAIPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TallyAIPlugin.swift; sourceTree = "<group>"; };
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
@@ -70,6 +76,9 @@
 			children = (
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
 				7CEF49B207524DBAA3F95B63 /* SpeechInputPlugin.swift */,
+				A11C0001A11C0001A11C0001 /* TallyStepCleaner.swift */,
+				A11C0002A11C0002A11C0002 /* TallyAIEngine.swift */,
+				A11C0003A11C0003A11C0003 /* TallyAIPlugin.swift */,
 				2E39BEC259B245139B12E942 /* MainViewController.swift */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
@@ -167,6 +176,9 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 				2613833E3E654C5690ABA422 /* SpeechInputPlugin.swift in Sources */,
+				B22D0001B22D0001B22D0001 /* TallyStepCleaner.swift in Sources */,
+				B22D0002B22D0002B22D0002 /* TallyAIEngine.swift in Sources */,
+				B22D0003B22D0003B22D0003 /* TallyAIPlugin.swift in Sources */,
 				FD7E3CAF5FA84133A145508D /* MainViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
